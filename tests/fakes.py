@@ -1,0 +1,128 @@
+"""A fake AsyncAnthropic client: replays scripted streams, never touches the network."""
+
+from types import SimpleNamespace
+from typing import Any
+
+import anthropic
+import httpx2
+from anthropic.types import Message as ApiMessage
+from anthropic.types import TextBlock, Usage
+
+THINKING = object()  # marker: emit a thinking content_block_start event
+
+_REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+
+def api_message(
+    text: str = "",
+    *,
+    input_tokens: int = 100,
+    output_tokens: int = 20,
+    stop_reason: str = "end_turn",
+    model: str = "claude-opus-5-5",
+) -> ApiMessage:
+    return ApiMessage(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        model=model,
+        content=[TextBlock(type="text", text=text)] if text else [],
+        stop_reason=stop_reason,
+        stop_sequence=None,
+        usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+
+
+def rate_limit_error() -> anthropic.RateLimitError:
+    return anthropic.RateLimitError(
+        "rate limited", response=httpx2.Response(429, request=_REQUEST), body=None
+    )
+
+
+def auth_error() -> anthropic.AuthenticationError:
+    return anthropic.AuthenticationError(
+        "invalid x-api-key", response=httpx2.Response(401, request=_REQUEST), body=None
+    )
+
+
+def midstream_overloaded_error() -> anthropic.APIStatusError:
+    """How the SDK surfaces an SSE `error` event: HTTP 200, error type in the body."""
+    return anthropic.APIStatusError(
+        "overloaded",
+        response=httpx2.Response(200, request=_REQUEST),
+        body={"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}},
+    )
+
+
+class Script:
+    """One scripted call to messages.stream().
+
+    `items` may contain text chunks (str), THINKING, or an exception to raise mid-stream.
+    `open_error` is raised when the stream is opened (after SDK retries, in real life).
+    """
+
+    def __init__(
+        self,
+        items: list[Any] | None = None,
+        *,
+        final: ApiMessage | None = None,
+        open_error: Exception | None = None,
+        input_tokens: int = 100,
+    ) -> None:
+        self.items = items or []
+        self.final = final
+        self.open_error = open_error
+        self.input_tokens = input_tokens
+
+
+class FakeStream:
+    def __init__(self, script: Script) -> None:
+        self.script = script
+        self.closed = False
+        self.current_message_snapshot = SimpleNamespace(
+            usage=Usage(input_tokens=script.input_tokens, output_tokens=0)
+        )
+
+    async def __aenter__(self) -> "FakeStream":
+        if self.script.open_error:
+            raise self.script.open_error
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self.closed = True
+
+    async def __aiter__(self):
+        for item in self.script.items:
+            if isinstance(item, Exception):
+                raise item
+            if item is THINKING:
+                yield SimpleNamespace(
+                    type="content_block_start", content_block=SimpleNamespace(type="thinking")
+                )
+            else:
+                self.current_message_snapshot.usage.output_tokens += 1
+                yield SimpleNamespace(type="text", text=item)
+
+    async def get_final_message(self) -> ApiMessage:
+        if self.script.final is not None:
+            return self.script.final
+        text = "".join(i for i in self.script.items if isinstance(i, str))
+        return api_message(text)
+
+
+class FakeMessages:
+    def __init__(self, scripts: list[Script]) -> None:
+        self.scripts = list(scripts)
+        self.calls: list[dict[str, Any]] = []
+        self.streams: list[FakeStream] = []
+
+    def stream(self, **params: Any) -> FakeStream:
+        self.calls.append(params)
+        stream = FakeStream(self.scripts.pop(0))
+        self.streams.append(stream)
+        return stream
+
+
+class FakeClient:
+    def __init__(self, *scripts: Script) -> None:
+        self.messages = FakeMessages(list(scripts))

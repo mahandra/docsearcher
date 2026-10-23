@@ -41,6 +41,9 @@ class Message(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.COMPLETE)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Why the model stopped: end_turn, max_tokens (truncated), refusal, ...
+    stop_reason = models.CharField(max_length=32, blank=True)
+
     # Cost tracking — filled for assistant messages only.
     model = models.CharField(max_length=100, blank=True)
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
