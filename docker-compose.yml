@@ -1,0 +1,44 @@
+services:
+  db:
+    # pgvector image from day one, so phase 2 needs no database migration.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: docqa
+      POSTGRES_USER: docqa
+      POSTGRES_PASSWORD: docqa
+    ports:
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docqa -d docqa"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    # Not used yet; Celery broker from phase 2.
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+
+  web:
+    build: .
+    command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      # Inside the compose network the database is reachable as "db".
+      DATABASE_URL: postgres://docqa:docqa@db:5432/docqa
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  pgdata:
