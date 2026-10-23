@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Conversations · DocQA{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1>Conversations</h1>
+  <form method="post" action="{% url 'chat:conversation_create' %}">
+    {% csrf_token %}
+    <button type="submit">New chat</button>
+  </form>
+</div>
+<ul class="conversations">
+  {% for conversation in conversations %}
+    <li>
+      <a href="{% url 'chat:conversation_detail' conversation.pk %}">{{ conversation }}</a>
+      <span class="muted">{{ conversation.updated_at|timesince }} ago</span>
+    </li>
+  {% empty %}
+    <li class="muted">No conversations yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

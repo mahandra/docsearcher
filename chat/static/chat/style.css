@@ -1,0 +1,79 @@
+:root {
+  --bg: #f7f7f8;
+  --fg: #1f2328;
+  --muted: #6b7280;
+  --accent: #3b5bdb;
+  --user-bg: #e7ecff;
+  --assistant-bg: #ffffff;
+  --border: #e5e7eb;
+  --warn: #b45309;
+  --danger: #c92a2a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main { max-width: 820px; margin: 0 auto; padding: 16px 16px 160px; }
+
+a { color: var(--accent); }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--border);
+}
+.topbar form { display: flex; gap: 8px; align-items: center; margin: 0; }
+.brand { font-weight: 700; text-decoration: none; color: var(--fg); }
+
+.muted { color: var(--muted); font-size: 13px; }
+
+button {
+  font: inherit; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+}
+button.link { background: none; border: none; color: var(--accent); padding: 0; }
+button.danger { color: var(--danger); }
+
+.list-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.list-header h1 { font-size: 20px; margin: 8px 0; overflow-wrap: anywhere; }
+
+.conversations { list-style: none; padding: 0; }
+.conversations li {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; background: #fff; border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 8px;
+}
+
+.messages { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.message {
+  padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border);
+  max-width: 90%;
+}
+.message.user { align-self: flex-end; background: var(--user-bg); }
+.message.assistant { align-self: flex-start; background: var(--assistant-bg); }
+.message .content { white-space: pre-wrap; overflow-wrap: anywhere; }
+.message .content:empty { display: none; }
+.message .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.message .meta:empty { display: none; }
+.message.streaming .meta { font-style: italic; }
+.message .warn, .message.error .meta { color: var(--warn); }
+
+.composer {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: flex; gap: 8px; align-items: flex-end;
+  max-width: 820px; margin: 0 auto; padding: 12px 16px 16px;
+  background: var(--bg);
+}
+.composer textarea {
+  flex: 1; font: inherit; padding: 8px 10px; resize: vertical;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+
+.auth { max-width: 360px; margin: 40px auto; }
+.auth input { width: 100%; padding: 6px 8px; font: inherit; }
+.auth .helptext, .auth ul { font-size: 12px; color: var(--muted); }

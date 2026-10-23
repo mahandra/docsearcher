@@ -1,0 +1,15 @@
+<article class="message {{ message.role }} {{ message.status }}">
+  <div class="content">{{ message.content }}</div>
+  {% if message.role == "assistant" %}
+    <footer class="meta">
+      {% if message.status == "interrupted" %}<span class="warn">Interrupted.</span>{% endif %}
+      {% if message.status == "error" %}<span class="warn">Failed to get an answer.</span>{% endif %}
+      {% if message.stop_reason == "max_tokens" %}<span class="warn">Answer truncated (max tokens).</span>{% endif %}
+      {% if message.stop_reason == "refusal" %}<span class="warn">The model declined to answer.</span>{% endif %}
+      {% if message.input_tokens is not None %}
+        {{ message.model }} · {{ message.input_tokens }} in / {{ message.output_tokens }} out
+        {% if message.cost_usd is not None %}· ${{ message.cost_usd|floatformat:6 }}{% endif %}
+      {% endif %}
+    </footer>
+  {% endif %}
+</article>

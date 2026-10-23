@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ conversation }} · DocQA{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1>{{ conversation }}</h1>
+  <form method="post" action="{% url 'chat:conversation_delete' conversation.pk %}"
+        onsubmit="return window.confirm('Delete this conversation?')">
+    {% csrf_token %}
+    <button type="submit" class="link danger">Delete</button>
+  </form>
+</div>
+<p class="muted">Total cost: ${{ total_cost|floatformat:4 }}</p>
+
+<div id="messages" class="messages">
+  {% for message in chat_messages %}
+    {% include "chat/partials/message.html" %}
+  {% endfor %}
+  {% if awaiting_reply %}
+    {% include "chat/partials/assistant_placeholder.html" %}
+  {% endif %}
+</div>
+
+<form class="composer"
+      hx-post="{% url 'chat:message_create' conversation.pk %}"
+      hx-target="#messages" hx-swap="beforeend"
+      hx-on::after-request="if (event.detail.successful) this.reset()">
+  <textarea name="content" rows="3" placeholder="Ask anything…" required
+            onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit(); }"></textarea>
+  <button type="submit">Send</button>
+</form>
+{% endblock %}
