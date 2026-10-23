@@ -11,6 +11,9 @@ class Conversation(models.Model):
     title = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Set while a reply is being generated; guards against duplicate generations
+    # (EventSource reconnects, two open tabs). See chat.views.claim_generation().
+    generation_started_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-updated_at"]
