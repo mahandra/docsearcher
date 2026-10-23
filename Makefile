@@ -1,7 +1,8 @@
 .PHONY: help up down build logs migrate makemigrations test lint fmt shell superuser
 
 DC = docker compose
-RUN = $(DC) run --rm web
+# Run as the host user so files created in the container (migrations) are not owned by root.
+RUN = $(DC) run --rm --user $(shell id -u):$(shell id -g) web
 
 help:  ## Show available commands
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
