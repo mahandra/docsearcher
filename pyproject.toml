@@ -4,10 +4,15 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=2.2.0",
+    "celery[redis]>=5.6.3",
     "django>=5.2,<6",
     "django-environ>=0.14.0",
+    "pgvector>=0.5.1",
     "psycopg[binary]>=3.3.6",
+    "pypdf>=6.21.2",
+    "python-docx>=1.2.0",
     "uvicorn[standard]>=0.54.0",
+    "voyageai>=0.5.0",
 ]
 
 [dependency-groups]
@@ -27,7 +32,7 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["chat/migrations"]
+extend-exclude = ["*/migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "DJ", "ASYNC"]

@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "chat",
+    "documents",
 ]
 
 MIDDLEWARE = [
@@ -81,6 +82,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Uploaded files; shared between the web and worker containers.
+MEDIA_URL = "media/"
+MEDIA_ROOT = env.path("MEDIA_ROOT", default=BASE_DIR / "media")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- LLM -------------------------------------------------------------------------
@@ -97,6 +102,21 @@ LLM_MAX_HISTORY_MESSAGES = env.int("LLM_MAX_HISTORY_MESSAGES", default=20)
 LLM_MAX_RETRIES = env.int("LLM_MAX_RETRIES", default=3)
 LLM_TIMEOUT_SECONDS = env.float("LLM_TIMEOUT_SECONDS", default=120.0)
 
+# --- Documents & embeddings ---------------------------------------------------------
+# Checked in the upload form. In production also cap the body size at the proxy
+# (e.g. nginx client_max_body_size): Django's DATA_UPLOAD_MAX_MEMORY_SIZE ignores files.
+DOCUMENT_MAX_UPLOAD_MB = env.int("DOCUMENT_MAX_UPLOAD_MB", default=20)
+
+VOYAGE_API_KEY = env("VOYAGE_API_KEY", default="")
+EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="voyage-4")
+EMBEDDING_BATCH_SIZE = env.int("EMBEDDING_BATCH_SIZE", default=128)
+EMBEDDING_MAX_RETRIES = env.int("EMBEDDING_MAX_RETRIES", default=3)
+EMBEDDING_TIMEOUT_SECONDS = env.float("EMBEDDING_TIMEOUT_SECONDS", default=60.0)
+
+# Chunk size and overlap in (estimated) tokens.
+CHUNK_SIZE_TOKENS = env.int("CHUNK_SIZE_TOKENS", default=500)
+CHUNK_OVERLAP_TOKENS = env.int("CHUNK_OVERLAP_TOKENS", default=75)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -107,6 +127,7 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "chat": {"level": env("CHAT_LOG_LEVEL", default="INFO")},
+        "documents": {"level": env("DOCUMENTS_LOG_LEVEL", default="INFO")},
         # Override uvicorn's own handlers so server and access logs share our format.
         "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "uvicorn.error": {"level": "INFO"},
