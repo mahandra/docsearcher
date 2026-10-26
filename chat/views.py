@@ -40,6 +40,7 @@ def signup(request: HttpRequest) -> HttpResponse:
 @login_required
 def conversation_list(request: HttpRequest) -> HttpResponse:
     conversations = Conversation.objects.filter(user=request.user)
+    logger.info("Conversation list page accessed")
     return render(request, "chat/conversation_list.html", {"conversations": conversations})
 
 
@@ -155,6 +156,7 @@ async def message_stream(request: HttpRequest, pk: int) -> HttpResponse:
 async def _event_stream(conversation: Conversation) -> AsyncIterator[str]:
     try:
         async for event in get_chat_service().stream_reply(conversation):
+            logger.debug("SSE %s conversation=%s", type(event).__name__, conversation.pk)
             match event:
                 case ThinkingStarted():
                     yield sse("thinking", {})

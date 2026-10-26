@@ -100,7 +100,16 @@ LLM_TIMEOUT_SECONDS = env.float("LLM_TIMEOUT_SECONDS", default=120.0)
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "formatters": {
+        "simple": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "simple"}},
     "root": {"handlers": ["console"], "level": "INFO"},
-    "loggers": {"chat": {"level": env("CHAT_LOG_LEVEL", default="INFO")}},
+    "loggers": {
+        "chat": {"level": env("CHAT_LOG_LEVEL", default="INFO")},
+        # Override uvicorn's own handlers so server and access logs share our format.
+        "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"level": "INFO"},
+        "uvicorn.access": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
 }
