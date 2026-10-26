@@ -12,7 +12,9 @@ Learning/portfolio project — the author is an experienced Django engineer new 
 
 ## Stack
 - Python 3.12, Django 5.2, uv (`uv add`, `uv run`), served via **ASGI/uvicorn only** (no wsgi.py).
-- PostgreSQL (`pgvector/pgvector` image), Redis (Celery from phase 2), Docker Compose.
+- PostgreSQL + pgvector (`pgvector` Python package), Redis + Celery worker, Docker Compose.
+- Embeddings: Voyage AI (`voyageai` SDK, model `voyage-4`, 1024 dims) — Anthropic has no embeddings API.
+- Parsing: `pypdf` (PDF), `python-docx` (DOCX). Test fixtures are generated with `reportlab`/`python-docx`.
 - Anthropic Python SDK (`AsyncAnthropic`, SDK 2.x). Frontend: Django templates + HTMX + small vanilla JS.
 - pytest + pytest-django + pytest-asyncio (`asyncio_mode = "auto"`), ruff.
 
@@ -29,11 +31,25 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   and must close it on `done`/`error` (otherwise it auto-reconnects and re-triggers generation).
   The server only generates for a user message that has no assistant reply yet.
 - Everything user-owned is scoped to `request.user` (Django built-in auth).
+- **Only `documents/embeddings.py` imports `voyageai`.** Callers use the `Embedder` protocol; errors are
+  mapped to `TransientEmbeddingError` (retry) / `EmbeddingAuthError` / `EmbeddingError` (permanent).
+- Ingestion pipeline (`documents/tasks.py`): detect type by magic bytes → parse (keep page/heading) →
+  chunk (`documents/chunking.py`) → embed with `input_type="document"` → atomically replace chunks.
+- Celery tasks must be idempotent (`acks_late`); enqueue only via `transaction.on_commit`
+  (`enqueue_processing`). No network calls inside `transaction.atomic()`.
+- Embedding dimension is fixed in the schema (`EMBEDDING_DIMENSIONS`); changing model/dims = re-embed all.
+- Token counts in chunking are estimates (`CHARS_PER_TOKEN`); billed usage comes from the provider.
 
 ## Tests
-- No real API calls in tests, ever. Mock the client injected into the service layer.
+- No real API calls in tests, ever. Fakes: `tests/fakes.py` (Anthropic), `tests/documents/fakes.py` (Voyage).
+- Async ORM tests need `django_db(transaction=True)` + the `close_async_db_connections` fixture.
+- Celery tasks are tested with `task.apply()`; on_commit with `django_capture_on_commit_callbacks`.
 - Tests run against Postgres (`make test` runs inside Docker).
 
 ## Commands
 `make up | down | migrate | makemigrations | test | lint | fmt | shell | superuser | logs`
 Run on the host: `uv run pytest`, `uv run python manage.py ...` (uses DATABASE_URL from .env → localhost:5434).
+After `uv add`, run `make build` — the Docker image does not see new dependencies otherwise.
+Containers run as the host UID (`HOST_UID`/`HOST_GID` exported by the Makefile); use `make`, not raw
+`docker compose`, so files in the bind mount are not root-owned.
+Changes to `.env` need `docker compose up -d --force-recreate web worker`.
