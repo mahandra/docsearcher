@@ -27,6 +27,10 @@ class EmbeddingError(Exception):
     """Embedding failed permanently (bad key, invalid input): retrying will not help."""
 
 
+class EmbeddingAuthError(EmbeddingError):
+    """Invalid or missing API key — a configuration problem, not the document's fault."""
+
+
 class TransientEmbeddingError(EmbeddingError):
     """Embedding failed temporarily (rate limit, outage, network): retry later."""
 
@@ -105,6 +109,8 @@ class VoyageEmbedder:
             )
         except TRANSIENT_ERRORS as exc:
             raise TransientEmbeddingError(str(exc)) from exc
+        except voyage_errors.AuthenticationError as exc:
+            raise EmbeddingAuthError(str(exc)) from exc
         except voyage_errors.VoyageError as exc:
             raise EmbeddingError(str(exc)) from exc
 

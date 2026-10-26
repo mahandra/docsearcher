@@ -102,6 +102,23 @@ LLM_MAX_HISTORY_MESSAGES = env.int("LLM_MAX_HISTORY_MESSAGES", default=20)
 LLM_MAX_RETRIES = env.int("LLM_MAX_RETRIES", default=3)
 LLM_TIMEOUT_SECONDS = env.float("LLM_TIMEOUT_SECONDS", default=120.0)
 
+# --- Celery ---------------------------------------------------------------------------
+CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6380/0")
+# Task outcomes are stored on the Document itself, so no result backend is needed.
+CELERY_TASK_IGNORE_RESULT = True
+# Acknowledge a task only after it finished: if the worker dies mid-task, the task is
+# redelivered. Requires idempotent tasks.
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+# Take one task at a time; ingestion tasks are long, so prefetching would starve others.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_SOFT_TIME_LIMIT = 540
+CELERY_TASK_TIME_LIMIT = 600
+# Keep our LOGGING configuration instead of Celery's.
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+# Run tasks synchronously in-process (tests, debugging without a worker).
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+
 # --- Documents & embeddings ---------------------------------------------------------
 # Checked in the upload form. In production also cap the body size at the proxy
 # (e.g. nginx client_max_body_size): Django's DATA_UPLOAD_MAX_MEMORY_SIZE ignores files.
@@ -128,6 +145,7 @@ LOGGING = {
     "loggers": {
         "chat": {"level": env("CHAT_LOG_LEVEL", default="INFO")},
         "documents": {"level": env("DOCUMENTS_LOG_LEVEL", default="INFO")},
+        "celery": {"level": "INFO"},
         # Override uvicorn's own handlers so server and access logs share our format.
         "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "uvicorn.error": {"level": "INFO"},

@@ -16,8 +16,8 @@ down:  ## Stop all services
 build:  ## Rebuild the web image
 	$(DC) build web
 
-logs:  ## Follow web logs
-	$(DC) logs -f web
+logs:  ## Follow web and worker logs
+	$(DC) logs -f web worker
 
 migrate:  ## Apply database migrations
 	$(RUN) python manage.py migrate

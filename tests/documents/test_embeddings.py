@@ -4,7 +4,12 @@ import pytest
 import voyageai.error as voyage_errors
 
 from chat.pricing import estimate_embedding_cost
-from documents.embeddings import EmbeddingError, TransientEmbeddingError, VoyageEmbedder
+from documents.embeddings import (
+    EmbeddingAuthError,
+    EmbeddingError,
+    TransientEmbeddingError,
+    VoyageEmbedder,
+)
 from documents.models import EMBEDDING_DIMENSIONS
 from tests.documents.fakes import FakeVoyageClient
 
@@ -86,3 +91,10 @@ def test_embedding_cost():
     assert estimate_embedding_cost("voyage-4", 1_000_000) == Decimal("0.060000")
     assert estimate_embedding_cost("voyage-4", 50_000) == Decimal("0.003000")
     assert estimate_embedding_cost("unknown-model", 10) is None
+
+
+def test_auth_error_is_reported_separately():
+    with pytest.raises(EmbeddingAuthError):
+        make_embedder(
+            FakeVoyageClient(errors=[voyage_errors.AuthenticationError("bad key")])
+        ).embed_documents(["x"])
