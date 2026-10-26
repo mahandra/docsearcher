@@ -24,6 +24,8 @@ services:
 
   web:
     build: .
+    # Run as the host user: files written to the bind mount (media/) stay editable.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload
     env_file: .env
     environment:
@@ -42,6 +44,7 @@ services:
 
   worker:
     build: .
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     # watchfiles restarts the worker on code changes (development only).
     command: watchfiles --filter python "celery -A config worker -l info --concurrency 2" /app
     env_file: .env

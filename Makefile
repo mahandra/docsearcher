@@ -1,8 +1,11 @@
 .PHONY: help up down build logs migrate makemigrations test lint fmt shell superuser
 
+# Containers run as the host user (see docker-compose.yml), so files they create
+# (migrations, uploads) are owned by you, not root.
+export HOST_UID := $(shell id -u)
+export HOST_GID := $(shell id -g)
 DC = docker compose
-# Run as the host user so files created in the container (migrations) are not owned by root.
-RUN = $(DC) run --rm --user $(shell id -u):$(shell id -g) web
+RUN = $(DC) run --rm web
 
 help:  ## Show available commands
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'

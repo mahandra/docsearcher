@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ document }} · DocQA{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1>{{ document.original_name }}</h1>
+  <a href="{% url 'documents:document_list' %}">← All documents</a>
+</div>
+<p class="muted">
+  {% if document.page_count %}{{ document.page_count }} pages · {% endif %}
+  {{ document.chunk_count }} chunks · {{ document.embedding_tokens }} tokens embedded with
+  {{ document.embedding_model }}
+  {% if document.embedding_cost_usd is not None %}· ${{ document.embedding_cost_usd|floatformat:6 }}{% endif %}
+</p>
+
+{% for chunk in chunks %}
+  <article class="chunk">
+    <header class="muted">
+      #{{ chunk.index }}{% if chunk.location %} · {{ chunk.location }}{% endif %}
+      · ~{{ chunk.token_count }} tokens
+    </header>
+    <div class="content">{{ chunk.text }}</div>
+    <footer class="muted vector" title="First values of the {{ chunk.embedding|length }}-dimensional embedding">
+      [{% for value in chunk.embedding|slice:":6" %}{{ value|floatformat:4 }}, {% endfor %}… {{ chunk.embedding|length }} values]
+    </footer>
+  </article>
+{% endfor %}
+{% endblock %}

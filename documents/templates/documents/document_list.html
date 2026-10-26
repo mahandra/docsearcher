@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Documents · DocQA{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1>Documents</h1>
+</div>
+{% include "documents/partials/upload_form.html" %}
+<ul id="document-rows" class="documents">
+  {% for document in documents %}
+    {% include "documents/partials/document_row.html" %}
+  {% empty %}
+    <li class="muted empty">No documents yet. Upload a PDF or DOCX file.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

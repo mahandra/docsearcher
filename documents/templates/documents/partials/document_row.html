@@ -1,0 +1,34 @@
+<li id="document-{{ document.pk }}"
+    {% if not document.is_final %}
+      hx-get="{% url 'documents:document_row' document.pk %}"
+      hx-trigger="every 2s" hx-swap="outerHTML"
+    {% endif %}>
+  <div>
+    {% if document.status == "ready" %}
+      <a href="{% url 'documents:document_detail' document.pk %}">{{ document.original_name }}</a>
+    {% else %}
+      {{ document.original_name }}
+    {% endif %}
+    <span class="badge {{ document.status }}">{{ document.get_status_display }}</span>
+    <div class="muted">
+      {{ document.size_bytes|filesizeformat }}
+      {% if document.page_count %}· {{ document.page_count }} pages{% endif %}
+      {% if document.status == "ready" %}
+        · {{ document.chunk_count }} chunks · {{ document.embedding_tokens }} tokens
+        {% if document.embedding_cost_usd is not None %}· ${{ document.embedding_cost_usd|floatformat:6 }}{% endif %}
+      {% endif %}
+    </div>
+    {% if document.error %}<div class="warn">{{ document.error }}</div>{% endif %}
+  </div>
+  <div class="actions">
+    {% if document.status == "failed" %}
+      <form method="post" action="{% url 'documents:document_reprocess' document.pk %}">
+        {% csrf_token %}<button type="submit" class="link">Retry</button>
+      </form>
+    {% endif %}
+    <form method="post" action="{% url 'documents:document_delete' document.pk %}"
+          onsubmit="return window.confirm('Delete this document?')">
+      {% csrf_token %}<button type="submit" class="link danger">Delete</button>
+    </form>
+  </div>
+</li>

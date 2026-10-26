@@ -1,0 +1,7 @@
+{% include "documents/partials/upload_form.html" %}
+{% if document %}
+  {# Out-of-band swap: prepend the new row to the list, outside the form being replaced. #}
+  <div hx-swap-oob="afterbegin:#document-rows">
+    {% include "documents/partials/document_row.html" %}
+  </div>
+{% endif %}
