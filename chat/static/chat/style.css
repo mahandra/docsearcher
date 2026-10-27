@@ -116,3 +116,9 @@ button.danger { color: var(--danger); }
 .chunk .content { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
 .chunk .vector { font-family: ui-monospace, monospace; font-size: 11px; overflow-wrap: anywhere; }
 .documents li.empty:not(:only-child) { display: none; }
+
+.search-form { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-form input { flex: 1; padding: 6px 8px; font: inherit; }
+.chunk.cut { opacity: .55; }
+.chunk .scores { font-family: ui-monospace, monospace; font-size: 12px; }
+.cutoff { text-align: center; margin: 14px 0; border-top: 1px dashed var(--border); padding-top: 6px; }

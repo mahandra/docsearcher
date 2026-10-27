@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Search · DocQA{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1>Search</h1>
+</div>
+<p class="muted">
+  Retrieval playground: how vector search and keyword search rank your document chunks,
+  and how Reciprocal Rank Fusion merges them. No LLM is called; each search embeds the query once.
+</p>
+<form method="get" class="search-form">
+  <input type="search" name="q" value="{{ query }}" placeholder="Ask something about your documents" maxlength="1000" autofocus>
+  <button type="submit">Search</button>
+</form>
+
+{% if result %}
+  <p class="muted">
+    {{ result.vector_hits|length }} vector candidates · {{ result.keyword_hits|length }} keyword candidates
+    {% if result.embedding_model %}· query embedded with {{ result.embedding_model }} ({{ result.embedding_tokens }} tokens){% endif %}
+  </p>
+  {% if result.vector_error %}
+    <p class="warn">Vector search unavailable, keyword results only: {{ result.vector_error }}</p>
+  {% endif %}
+
+  {% for hit in candidates %}
+    {% if forloop.counter0 == top_k %}
+      <p class="muted cutoff">↑ top {{ top_k }} go into the prompt · below: candidates that were cut off</p>
+    {% endif %}
+    <article class="chunk{% if forloop.counter > top_k %} cut{% endif %}">
+      <header class="muted">
+        #{{ forloop.counter }} ·
+        <a href="{% url 'documents:document_detail' hit.chunk.document.pk %}#chunk-{{ hit.chunk.index }}">{{ hit.chunk.document }}</a>
+        {% if hit.chunk.location %} · {{ hit.chunk.location }}{% endif %}
+      </header>
+      <div class="scores">
+        RRF {{ hit.score|floatformat:4 }} ·
+        vector {% if hit.vector_rank %}#{{ hit.vector_rank }} (distance {{ hit.vector_distance|floatformat:3 }}){% else %}—{% endif %} ·
+        keyword {% if hit.keyword_rank %}#{{ hit.keyword_rank }} (rank {{ hit.keyword_score|floatformat:3 }}){% else %}—{% endif %}
+      </div>
+      <div class="content">{{ hit.chunk.text|truncatechars:400 }}</div>
+    </article>
+  {% empty %}
+    <p class="muted">Nothing found. Only documents with status “ready” are searched.</p>
+  {% endfor %}
+{% endif %}
+{% endblock %}

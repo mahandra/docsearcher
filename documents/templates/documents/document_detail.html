@@ -13,7 +13,7 @@
 </p>
 
 {% for chunk in chunks %}
-  <article class="chunk">
+  <article class="chunk" id="chunk-{{ chunk.index }}">
     <header class="muted">
       #{{ chunk.index }}{% if chunk.location %} · {{ chunk.location }}{% endif %}
       · ~{{ chunk.token_count }} tokens

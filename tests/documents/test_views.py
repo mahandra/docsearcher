@@ -198,3 +198,46 @@ def test_delete_survives_file_removal_error(
 
     assert response.status_code == 302
     assert not Document.objects.exists()
+
+
+# --- Search playground ----------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_embedder(monkeypatch):
+    from tests.documents.fakes import FakeEmbedder
+
+    embedder = FakeEmbedder()
+    monkeypatch.setattr("documents.retrieval.get_embedder", lambda: embedder)
+    return embedder
+
+
+def test_search_page_requires_login(client):
+    response = client.get(reverse("documents:search_debug"))
+    assert response.status_code == 302
+
+
+def test_search_page_without_query_does_not_embed(auth_client, fake_embedder):
+    response = auth_client.get(reverse("documents:search_debug"))
+
+    assert response.status_code == 200
+    assert fake_embedder.queries == []
+
+
+def test_search_page_shows_ranked_candidates_and_top_k_cutoff(
+    auth_client, user, make_document, fake_embedder, settings
+):
+    settings.RETRIEVAL_TOP_K = 1
+    document = make_document(status=Document.Status.READY)
+    for i, text in enumerate(["The notice period is one month.", "Notice must be written."]):
+        Chunk.objects.create(
+            document=document, index=i, text=text, token_count=5, embedding=[0.1] * 1024
+        )
+
+    response = auth_client.get(reverse("documents:search_debug"), {"q": "notice period"})
+
+    assert fake_embedder.queries == ["notice period"]
+    content = response.content.decode()
+    assert content.index("The notice period is one month.") < content.index("top 1 go into")
+    assert content.index("top 1 go into") < content.index("Notice must be written.")
+    assert "#chunk-0" in content

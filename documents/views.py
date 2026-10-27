@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse
@@ -8,7 +9,10 @@ from django.views.decorators.http import require_POST
 
 from .forms import DocumentUploadForm
 from .models import Document
+from .retrieval import reciprocal_rank_fusion, search
 from .tasks import enqueue_processing
+
+MAX_QUERY_CHARS = 1000
 
 
 @login_required
@@ -85,3 +89,19 @@ def document_reprocess(request: HttpRequest, pk: int) -> HttpResponse:
         document.save(update_fields=["status", "error"])
         enqueue_processing(document)
     return redirect("documents:document_list")
+
+
+@login_required
+def search_debug(request: HttpRequest) -> HttpResponse:
+    """Retrieval playground: shows how each search ranked the chunks, without an LLM call.
+
+    Costs one query embedding per search.
+    """
+    query = request.GET.get("q", "").strip()[:MAX_QUERY_CHARS]
+    context = {"query": query, "top_k": settings.RETRIEVAL_TOP_K}
+    if query:
+        result = search(request.user, query)
+        context["result"] = result
+        # All candidates, not just the top K, to show what was cut off and why.
+        context["candidates"] = reciprocal_rank_fusion(result.vector_hits, result.keyword_hits)
+    return render(request, "documents/search_debug.html", context)

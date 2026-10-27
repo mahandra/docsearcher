@@ -6,6 +6,7 @@ app_name = "documents"
 
 urlpatterns = [
     path("", views.document_list, name="document_list"),
+    path("search/", views.search_debug, name="search_debug"),
     path("upload/", views.document_upload, name="document_upload"),
     path("<int:pk>/", views.document_detail, name="document_detail"),
     path("<int:pk>/row/", views.document_row, name="document_row"),
