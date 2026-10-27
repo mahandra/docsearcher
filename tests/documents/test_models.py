@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from django.contrib.postgres.search import SearchQuery
 from django.db import IntegrityError
 
 from documents.models import EMBEDDING_DIMENSIONS, Chunk
@@ -35,3 +36,39 @@ def test_chunk_location():
     assert Chunk(page_start=3, page_end=3).location == "p. 3"
     assert Chunk(page_start=3, page_end=5).location == "pp. 3–5"
     assert Chunk(section="Introduction").location == "Introduction"
+
+
+@pytest.mark.parametrize(
+    ("query", "config"),
+    [
+        ("contract", "english"),  # stem of "contracts"
+        ("terminated", "english"),  # "termination" and "terminated" share the stem
+        ("договор", "russian"),  # stem of "договоры"
+        ("расторжении", "russian"),  # another case form of "расторжение"
+    ],
+)
+def test_search_vector_is_generated_with_english_and_russian_stemming(make_document, query, config):
+    chunk = Chunk.objects.create(
+        document=make_document(),
+        index=0,
+        text="All contracts allow termination. Договоры допускают расторжение.",
+        token_count=10,
+        embedding=np.zeros(EMBEDDING_DIMENSIONS) + 0.1,
+    )
+
+    matches = Chunk.objects.filter(search_vector=SearchQuery(query, config=config))
+    assert list(matches) == [chunk]
+
+
+def test_search_vector_follows_text_updates(make_document):
+    chunk = Chunk.objects.create(
+        document=make_document(),
+        index=0,
+        text="invoice",
+        token_count=2,
+        embedding=np.zeros(EMBEDDING_DIMENSIONS) + 0.1,
+    )
+    Chunk.objects.filter(pk=chunk.pk).update(text="receipt")
+
+    query = SearchQuery("invoice", config="english")
+    assert not Chunk.objects.filter(search_vector=query).exists()

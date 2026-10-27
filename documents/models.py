@@ -2,12 +2,19 @@ import uuid
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.db import models
 from pgvector.django import HnswIndex, VectorField
 
 # Fixed by the database schema: vectors of different sizes (or from different models)
 # cannot be compared. Changing the embedding model means re-embedding every chunk.
 EMBEDDING_DIMENSIONS = 1024
+
+# Text search configurations (stemmers) for full-text search. Documents are mixed
+# English/Russian, so every chunk is indexed with both: "contracts" matches "contract",
+# "договоры" matches "договор". A word unknown to a stemmer is still indexed as-is.
+SEARCH_CONFIGS = ("english", "russian")
 
 
 def document_upload_to(instance: "Document", filename: str) -> str:
@@ -74,13 +81,22 @@ class Chunk(models.Model):
     token_count = models.PositiveIntegerField()
     embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS)
 
+    # Computed by Postgres on every insert/update (GENERATED ALWAYS AS ... STORED), so it
+    # can never get out of sync with `text`. Used for keyword search alongside vectors.
+    search_vector = models.GeneratedField(
+        expression=SearchVector("text", config=SEARCH_CONFIGS[0])
+        + SearchVector("text", config=SEARCH_CONFIGS[1]),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+
     class Meta:
         ordering = ["document", "index"]
         constraints = [
             models.UniqueConstraint(fields=["document", "index"], name="unique_chunk_index"),
         ]
         indexes = [
-            # Approximate nearest-neighbour index for cosine distance (used in phase 3).
+            # Approximate nearest-neighbour index for cosine distance.
             HnswIndex(
                 name="chunk_embedding_hnsw",
                 fields=["embedding"],
@@ -88,6 +104,7 @@ class Chunk(models.Model):
                 ef_construction=64,
                 opclasses=["vector_cosine_ops"],
             ),
+            GinIndex(name="chunk_search_vector_gin", fields=["search_vector"]),
         ]
 
     def __str__(self) -> str:
