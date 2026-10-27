@@ -5,6 +5,16 @@ from django.db import connections
 from chat.models import Conversation
 
 
+@pytest.fixture(autouse=True)
+def fake_query_embedder(monkeypatch):
+    """Retrieval runs on every chat reply; make sure it never calls the real Voyage API."""
+    from tests.documents.fakes import FakeEmbedder
+
+    embedder = FakeEmbedder()
+    monkeypatch.setattr("documents.retrieval.get_embedder", lambda: embedder)
+    return embedder
+
+
 @pytest.fixture
 def user(django_user_model):
     return django_user_model.objects.create_user(username="alice", password="pw-alice-123")

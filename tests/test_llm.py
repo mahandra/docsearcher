@@ -3,9 +3,11 @@ from decimal import Decimal
 import pytest
 
 from chat.llm import (
+    NO_SOURCES_NOTE,
     ChatService,
     Completed,
     Failed,
+    SourcesFound,
     TextDelta,
     ThinkingStarted,
     build_messages,
@@ -97,7 +99,8 @@ async def test_stream_reply_streams_text_and_saves_usage_and_cost(conversation):
 
     events = await collect(service, conversation)
 
-    assert isinstance(events[0], ThinkingStarted)
+    assert isinstance(events[0], SourcesFound)  # retrieval runs first
+    assert isinstance(events[1], ThinkingStarted)
     assert [e.text for e in events if isinstance(e, TextDelta)] == ["Hello", " there"]
     assert isinstance(events[-1], Completed)
     saved = events[-1].message
@@ -121,7 +124,16 @@ async def test_stream_reply_sends_system_prompt_history_and_config(conversation)
     assert params["model"] == "claude-opus-5-5"
     assert params["max_tokens"] == 1234
     assert params["system"] == load_prompt("system")
-    assert params["messages"] == [{"role": "user", "content": "Hi"}]
+    # No documents: the model is told that the search found nothing.
+    assert params["messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": NO_SOURCES_NOTE},
+                {"type": "text", "text": "Hi"},
+            ],
+        }
+    ]
     assert params["output_config"] == {"effort": "low"}
     assert "temperature" not in params
 
@@ -161,10 +173,10 @@ async def test_error_when_opening_stream_saves_error_message(conversation):
 
     events = await collect(service, conversation)
 
-    assert len(events) == 1 and isinstance(events[0], Failed)
-    assert "Too many requests" in events[0].error
-    assert events[0].message.status == Message.Status.ERROR
-    assert events[0].message.content == ""
+    assert len(events) == 2 and isinstance(events[1], Failed)
+    assert "Too many requests" in events[1].error
+    assert events[1].message.status == Message.Status.ERROR
+    assert events[1].message.content == ""
     # Not retried again by us: the SDK owns retries of the initial request.
     assert len(client.messages.calls) == 1
 
@@ -229,6 +241,7 @@ async def test_client_disconnect_saves_partial_answer_and_closes_stream(conversa
     service, client = make_service(Script(["One", " two", " three"]))
 
     gen = service.stream_reply(conversation)
+    assert isinstance(await anext(gen), SourcesFound)
     assert (await anext(gen)).text == "One"
     await gen.aclose()  # what Django does when the browser goes away
 

@@ -54,6 +54,16 @@ class Message(models.Model):
     cost_usd = models.DecimalField(
         max_digits=12, decimal_places=6, null=True, blank=True, default=None
     )
+    # Retrieval for this answer: embedding the question (Voyage), billed separately.
+    retrieval_tokens = models.PositiveIntegerField(null=True, blank=True)
+    retrieval_cost_usd = models.DecimalField(
+        max_digits=12, decimal_places=6, null=True, blank=True, default=None
+    )
+
+    # Where the answer cites its sources: [{"offset": int, "source": int, "cited_text": str}].
+    # `offset` is the position in `content` right after the cited text; `source` is the
+    # MessageSource.position (the search_result_index the API returned).
+    citations = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["created_at", "id"]
@@ -66,6 +76,49 @@ class Message(models.Model):
         return (self.input_tokens or 0) + (self.output_tokens or 0)
 
 
+class MessageSource(models.Model):
+    """A chunk that was put into the prompt for an assistant message.
+
+    Name and location are copied, so the citation survives the document being deleted
+    or re-processed (chunks are replaced then).
+    """
+
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="sources")
+    position = models.PositiveSmallIntegerField()  # order in the prompt, 0-based
+    chunk = models.ForeignKey(
+        "documents.Chunk", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    document = models.ForeignKey(
+        "documents.Document", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    document_name = models.CharField(max_length=255)
+    chunk_index = models.PositiveIntegerField()
+    location = models.CharField(max_length=500, blank=True)
+
+    # Retrieval diagnostics — useful for evaluation (phase 4).
+    score = models.FloatField()
+    vector_rank = models.PositiveIntegerField(null=True, blank=True)
+    keyword_rank = models.PositiveIntegerField(null=True, blank=True)
+    # Whether the model actually cited it (vs. merely receiving it).
+    cited = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["message", "position"]
+        constraints = [
+            models.UniqueConstraint(fields=["message", "position"], name="unique_source_position"),
+        ]
+
+    def __str__(self) -> str:
+        return f"[{self.number}] {self.document_name} {self.location}".strip()
+
+    @property
+    def number(self) -> int:
+        """1-based footnote number shown to the user."""
+        return self.position + 1
+
+
 def conversation_cost(conversation: Conversation) -> Decimal:
-    total = conversation.messages.aggregate(total=models.Sum("cost_usd"))["total"]
-    return total or Decimal("0")
+    totals = conversation.messages.aggregate(
+        llm=models.Sum("cost_usd"), retrieval=models.Sum("retrieval_cost_usd")
+    )
+    return (totals["llm"] or Decimal("0")) + (totals["retrieval"] or Decimal("0"))

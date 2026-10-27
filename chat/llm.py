@@ -1,14 +1,19 @@
 """LLM service layer — the only module that talks to the Anthropic SDK.
 
 Views call `ChatService.stream_reply()` and receive plain domain events
-(`ThinkingStarted`, `TextDelta`, `Completed`, `Failed`), so the SDK can be swapped
-or mocked without touching the web layer.
+(`SourcesFound`, `ThinkingStarted`, `TextDelta`, `Cited`, `Completed`, `Failed`), so the
+SDK can be swapped or mocked without touching the web layer.
+
+RAG: before each reply the latest question is searched in the user's documents and the
+best chunks are sent as `search_result` blocks with citations enabled. Claude then
+attaches citations (which result, which text) to the parts of the answer they support;
+no "[1]" markers have to be prompted for or parsed.
 """
 
 import asyncio
 import logging
 import random
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
 from functools import cache
@@ -17,11 +22,15 @@ from typing import Any
 
 import anthropic
 from anthropic.types import MessageParam
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.utils import timezone
 
-from .models import Conversation, Message
-from .pricing import estimate_cost
+from documents.models import Chunk, Document
+from documents.retrieval import SearchHit, search
+
+from .models import Conversation, Message, MessageSource
+from .pricing import estimate_cost, estimate_embedding_cost
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +40,112 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 # The SDK raises these as a generic APIStatusError, so we classify them by body.
 RETRYABLE_STREAM_ERROR_TYPES = {"overloaded_error", "api_error", "rate_limit_error"}
 
+# Sent instead of search results when nothing was found, so the model knows it searched.
+NO_SOURCES_NOTE = "No passages relevant to this question were found in the user's documents."
+
+
+# --- Retrieval ---------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Source:
+    """A retrieved chunk as sent to the model; `position` is its search_result_index."""
+
+    position: int
+    chunk_id: int
+    document_id: int
+    document_name: str
+    chunk_index: int
+    location: str
+    text: str
+    score: float
+    vector_rank: int | None = None
+    keyword_rank: int | None = None
+
+    @classmethod
+    def from_hit(cls, position: int, hit: SearchHit) -> "Source":
+        chunk = hit.chunk
+        return cls(
+            position=position,
+            chunk_id=chunk.pk,
+            document_id=chunk.document_id,
+            document_name=chunk.document.original_name,
+            chunk_index=chunk.index,
+            location=chunk.location,
+            text=chunk.text,
+            score=hit.score,
+            vector_rank=hit.vector_rank,
+            keyword_rank=hit.keyword_rank,
+        )
+
+
+@dataclass(frozen=True)
+class Retrieval:
+    sources: list[Source]
+    embedding_model: str = ""
+    embedding_tokens: int = 0
+
+
+Retriever = Callable[[int, str], Awaitable[Retrieval]]
+
+
+async def retrieve_sources(user_id: int, query: str) -> Retrieval:
+    result = await sync_to_async(search)(user_id, query)
+    return Retrieval(
+        sources=[Source.from_hit(i, hit) for i, hit in enumerate(result.hits)],
+        embedding_model=result.embedding_model,
+        embedding_tokens=result.embedding_tokens,
+    )
+
+
+def search_result_block(source: Source) -> dict[str, Any]:
+    """One retrieved chunk as a `search_result` content block.
+
+    Claude cites whole text blocks, never substrings, so the chunk is split into
+    paragraphs: citations then point at (and quote) a paragraph, not the whole chunk.
+    """
+    paragraphs = [p.strip() for p in source.text.split("\n\n") if p.strip()] or [source.text]
+    title = source.document_name
+    if source.location:
+        title = f"{title} ({source.location})"
+    return {
+        "type": "search_result",
+        "source": f"document:{source.document_id}#chunk-{source.chunk_index}",
+        "title": title,
+        "content": [{"type": "text", "text": p} for p in paragraphs],
+        # All-or-nothing per request: every search_result must use the same setting.
+        "citations": {"enabled": True},
+    }
+
+
+def build_question_turn(question: str, sources: list[Source]) -> list[dict[str, Any]]:
+    """Content of the latest user turn: search results first, then the question.
+
+    Only the latest turn carries sources. Earlier turns stay plain text, otherwise every
+    follow-up would re-send (and re-bill) all previously retrieved chunks.
+    """
+    if sources:
+        blocks = [search_result_block(s) for s in sources]
+    else:
+        blocks = [{"type": "text", "text": NO_SOURCES_NOTE}]
+    return [*blocks, {"type": "text", "text": question}]
+
 
 # --- Domain events -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourcesFound:
+    """Retrieval finished; these chunks were sent to the model (possibly none)."""
+
+    sources: list[Source]
+
+
+@dataclass(frozen=True)
+class Cited:
+    """The text streamed so far is supported by this source (Source.position)."""
+
+    source: int
 
 
 @dataclass(frozen=True)
@@ -56,7 +169,7 @@ class Failed:
     message: Message  # the saved assistant message (status interrupted or error)
 
 
-StreamEvent = ThinkingStarted | TextDelta | Completed | Failed
+StreamEvent = SourcesFound | ThinkingStarted | TextDelta | Cited | Completed | Failed
 
 
 @dataclass
@@ -64,6 +177,8 @@ class _Attempt:
     """State of one streaming request, shared between the retry loop and the stream."""
 
     parts: list[str] = field(default_factory=list)
+    length: int = 0  # characters streamed so far = offset for the next citation
+    citations: list[dict[str, Any]] = field(default_factory=list)
     stream: Any = None
     final: Any = None  # anthropic.types.Message once the stream finished
 
@@ -162,8 +277,10 @@ class ChatService:
         max_tokens: int | None = None,
         max_stream_retries: int | None = None,
         retry_base_delay: float = 1.0,
+        retriever: Retriever = retrieve_sources,
     ) -> None:
         self.client = client
+        self.retriever = retriever
         self.model = model or settings.LLM_MODEL
         self.effort = settings.LLM_EFFORT if effort is None else effort
         self.max_tokens = max_tokens or settings.LLM_MAX_TOKENS
@@ -192,6 +309,11 @@ class ChatService:
         messages = await build_messages(conversation)
         if not messages or messages[-1]["role"] != Message.Role.USER:
             raise ValueError("The conversation must end with a user message")
+
+        question = messages[-1]["content"]
+        retrieval = await self.retriever(conversation.user_id, question)
+        yield SourcesFound(retrieval.sources)
+        messages[-1] = {"role": "user", "content": build_question_turn(question, retrieval.sources)}
         params = self._request_params(messages)
 
         attempt_no = 0
@@ -207,7 +329,8 @@ class ChatService:
                     final = attempt.final
                     saved = await self._save(
                         conversation,
-                        attempt.parts,
+                        attempt,
+                        retrieval,
                         Message.Status.COMPLETE,
                         model=final.model,
                         stop_reason=final.stop_reason or "",
@@ -247,7 +370,7 @@ class ChatService:
                     )
                     status = Message.Status.INTERRUPTED if attempt.parts else Message.Status.ERROR
                     saved = await self._save(
-                        conversation, attempt.parts, status, usage=attempt.snapshot_usage()
+                        conversation, attempt, retrieval, status, usage=attempt.snapshot_usage()
                     )
                     yield Failed(user_facing_error(exc), saved)
                     return
@@ -257,7 +380,8 @@ class ChatService:
             if saved is None:
                 await self._save(
                     conversation,
-                    attempt.parts,
+                    attempt,
+                    retrieval,
                     Message.Status.INTERRUPTED,
                     usage=attempt.snapshot_usage(),
                 )
@@ -274,13 +398,32 @@ class ChatService:
                     yield ThinkingStarted()
                 elif event.type == "text":
                     attempt.parts.append(event.text)
+                    attempt.length += len(event.text)
                     yield TextDelta(event.text)
+                elif event.type == "citation" and event.citation.type == "search_result_location":
+                    # Arrives after the text of the block it supports.
+                    citation = {
+                        "offset": attempt.length,
+                        "source": event.citation.search_result_index,
+                        "cited_text": event.citation.cited_text,
+                    }
+                    previous = attempt.citations[-1] if attempt.citations else None
+                    if previous and (previous["offset"], previous["source"]) == (
+                        citation["offset"],
+                        citation["source"],
+                    ):
+                        # Several paragraphs of one source cited for the same sentence.
+                        previous["cited_text"] += "\n\n" + citation["cited_text"]
+                        continue
+                    attempt.citations.append(citation)
+                    yield Cited(citation["source"])
             attempt.final = await stream.get_final_message()
 
     async def _save(
         self,
         conversation: Conversation,
-        parts: list[str],
+        attempt: _Attempt,
+        retrieval: Retrieval,
         status: str,
         *,
         model: str | None = None,
@@ -293,16 +436,54 @@ class ChatService:
         cost = None
         if input_tokens is not None and output_tokens is not None:
             cost = estimate_cost(model, input_tokens, output_tokens)
+        retrieval_cost = None
+        if retrieval.embedding_model:
+            retrieval_cost = estimate_embedding_cost(
+                retrieval.embedding_model, retrieval.embedding_tokens
+            )
         message = await Message.objects.acreate(
             conversation=conversation,
             role=Message.Role.ASSISTANT,
-            content="".join(parts),
+            content="".join(attempt.parts),
             status=status,
             stop_reason=stop_reason,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=cost,
+            retrieval_tokens=retrieval.embedding_tokens if retrieval.embedding_model else None,
+            retrieval_cost_usd=retrieval_cost,
+            citations=attempt.citations,
+        )
+        cited = {c["source"] for c in attempt.citations}
+        # Generation takes a while: a document may have been deleted or re-processed
+        # (chunks replaced) since retrieval. Keep the copied name/location, drop the links.
+        chunk_ids = {s.chunk_id for s in retrieval.sources}
+        live_chunks = {
+            pk async for pk in Chunk.objects.filter(pk__in=chunk_ids).values_list("pk", flat=True)
+        }
+        document_ids = {s.document_id for s in retrieval.sources}
+        live_documents = {
+            pk
+            async for pk in Document.objects.filter(pk__in=document_ids).values_list(
+                "pk", flat=True
+            )
+        }
+        await MessageSource.objects.abulk_create(
+            MessageSource(
+                message=message,
+                position=s.position,
+                chunk_id=s.chunk_id if s.chunk_id in live_chunks else None,
+                document_id=s.document_id if s.document_id in live_documents else None,
+                document_name=s.document_name[:255],
+                chunk_index=s.chunk_index,
+                location=s.location[:500],
+                score=s.score,
+                vector_rank=s.vector_rank,
+                keyword_rank=s.keyword_rank,
+                cited=s.position in cited,
+            )
+            for s in retrieval.sources
         )
         await Conversation.objects.filter(pk=conversation.pk).aupdate(updated_at=timezone.now())
         return message

@@ -5,10 +5,24 @@ from typing import Any
 
 import anthropic
 import httpx2
+from anthropic.types import CitationsSearchResultLocation, TextBlock, Usage
 from anthropic.types import Message as ApiMessage
-from anthropic.types import TextBlock, Usage
 
 THINKING = object()  # marker: emit a thinking content_block_start event
+
+
+def cite(source: int, cited_text: str = "cited paragraph") -> CitationsSearchResultLocation:
+    """Script item: a citations_delta for the search result at index `source`."""
+    return CitationsSearchResultLocation(
+        type="search_result_location",
+        cited_text=cited_text,
+        search_result_index=source,
+        start_block_index=0,
+        end_block_index=1,
+        source=f"source-{source}",
+        title=f"Title {source}",
+    )
+
 
 _REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
@@ -57,7 +71,8 @@ def midstream_overloaded_error() -> anthropic.APIStatusError:
 class Script:
     """One scripted call to messages.stream().
 
-    `items` may contain text chunks (str), THINKING, or an exception to raise mid-stream.
+    `items` may contain text chunks (str), THINKING, citations (`cite()`), or an exception
+    to raise mid-stream.
     `open_error` is raised when the stream is opened (after SDK retries, in real life).
     """
 
@@ -99,6 +114,8 @@ class FakeStream:
                 yield SimpleNamespace(
                     type="content_block_start", content_block=SimpleNamespace(type="thinking")
                 )
+            elif isinstance(item, CitationsSearchResultLocation):
+                yield SimpleNamespace(type="citation", citation=item)
             else:
                 self.current_message_snapshot.usage.output_tokens += 1
                 yield SimpleNamespace(type="text", text=item)

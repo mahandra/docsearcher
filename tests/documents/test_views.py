@@ -204,12 +204,8 @@ def test_delete_survives_file_removal_error(
 
 
 @pytest.fixture
-def fake_embedder(monkeypatch):
-    from tests.documents.fakes import FakeEmbedder
-
-    embedder = FakeEmbedder()
-    monkeypatch.setattr("documents.retrieval.get_embedder", lambda: embedder)
-    return embedder
+def fake_embedder(fake_query_embedder):
+    return fake_query_embedder
 
 
 def test_search_page_requires_login(client):
