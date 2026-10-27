@@ -20,7 +20,7 @@ Learning/portfolio project — the author is an experienced Django engineer new 
 
 ## Architecture rules
 - **Only `chat/llm.py` imports the Anthropic SDK.** Views talk to the service layer and receive domain
-  events (`TextDelta`, `Completed`, `Failed`), never SDK objects.
+  events (`SourcesFound`, `TextDelta`, `Cited`, `Completed`, `Failed`), never SDK objects.
 - System prompts live in `chat/prompts/*.md`, not in Python strings.
 - Model pricing lives in `chat/pricing.py`; cost is computed from `usage` and stored per message.
 - Model, effort, max_tokens, history window, retries — all configurable via env (`LLM_*`).
@@ -39,9 +39,21 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   (`enqueue_processing`). No network calls inside `transaction.atomic()`.
 - Embedding dimension is fixed in the schema (`EMBEDDING_DIMENSIONS`); changing model/dims = re-embed all.
 - Token counts in chunking are estimates (`CHARS_PER_TOKEN`); billed usage comes from the provider.
+- Retrieval (`documents/retrieval.py`): vector + full-text search merged with RRF, always scoped to
+  the user's `ready` documents. Queries are embedded with `input_type="query"`. Full-text uses a
+  generated `Chunk.search_vector` (english + russian); query words are stemmed per script.
+- RAG prompt: retrieved chunks go into the **latest** user turn only, as `search_result` blocks with
+  `citations: {enabled: true}` (all-or-nothing per request). Never send `citations` back inside a
+  `user` message (400 on API version 2026-10-21). Do not prompt for `[n]` markers — use native
+  citations. `ChatService` takes a `retriever`; tests inject a fake one.
+- Read citations from the finished text block (`content_block_stop`), not from `citation` deltas:
+  the API may send a block's citation before its text.
+- `MessageSource` copies document name/location; FKs to Chunk/Document are `SET_NULL` and are
+  checked before saving (documents can vanish mid-generation).
 
 ## Tests
-- No real API calls in tests, ever. Fakes: `tests/fakes.py` (Anthropic), `tests/documents/fakes.py` (Voyage).
+- No real API calls in tests, ever. Fakes: `tests/fakes.py` (Anthropic, incl. `cite()`),
+  `tests/documents/fakes.py` (Voyage). An autouse fixture replaces the query embedder everywhere.
 - Async ORM tests need `django_db(transaction=True)` + the `close_async_db_connections` fixture.
 - Celery tasks are tested with `task.apply()`; on_commit with `django_capture_on_commit_callbacks`.
 - Tests run against Postgres (`make test` runs inside Docker).
