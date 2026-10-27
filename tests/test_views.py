@@ -118,3 +118,45 @@ def test_signup_creates_user_and_logs_in(client, django_user_model):
     assert response.url == reverse("chat:conversation_list")
     assert django_user_model.objects.filter(username="carol").exists()
     assert client.get(reverse("chat:conversation_list")).status_code == 200
+
+
+def test_detail_renders_citation_markers_and_footnotes(auth_client, conversation, user):
+    from chat.models import MessageSource
+    from documents.models import Document
+
+    document = Document.objects.create(
+        user=user, original_name="contract.pdf", sha256="x", size_bytes=1, status="ready"
+    )
+    Message.objects.create(conversation=conversation, role="user", content="Notice?")
+    answer = Message.objects.create(
+        conversation=conversation,
+        role="assistant",
+        content="Two months, in writing.",
+        # Cites position 3 first, then 0: footnotes are numbered by first appearance.
+        citations=[
+            {"offset": 10, "source": 3, "cited_text": "Notice is two months."},
+            {"offset": 23, "source": 0, "cited_text": "<b>In writing</b>"},
+        ],
+    )
+    for position, doc in [(0, None), (3, document)]:
+        MessageSource.objects.create(
+            message=answer,
+            position=position,
+            document=doc,
+            document_name="old.docx" if doc is None else "contract.pdf",
+            chunk_index=5,
+            location="p. 3",
+            score=0.1,
+            cited=True,
+        )
+
+    html = auth_client.get(reverse("chat:conversation_detail", args=[conversation.pk])).text
+
+    content = (
+        f'Two months<a class="cite" href="/documents/{document.pk}/#chunk-5" '
+        'title="Notice is two months.">[1]</a>, in writing.'
+        '<span class="cite" title="&lt;b&gt;In writing&lt;/b&gt;">[2]</span>'
+    )
+    assert content in html
+    assert html.index("contract.pdf</a> · p. 3") < html.index("old.docx")
+    assert "(deleted)" in html

@@ -9,10 +9,20 @@ from django.contrib.auth.forms import UserCreationForm
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .llm import Completed, Failed, TextDelta, ThinkingStarted, get_chat_service
+from .llm import (
+    Cited,
+    Completed,
+    Failed,
+    Source,
+    SourcesFound,
+    TextDelta,
+    ThinkingStarted,
+    get_chat_service,
+)
 from .models import Conversation, Message, conversation_cost
 
 logger = logging.getLogger(__name__)
@@ -61,7 +71,7 @@ def conversation_delete(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required
 def conversation_detail(request: HttpRequest, pk: int) -> HttpResponse:
     conversation = get_object_or_404(Conversation, pk=pk, user=request.user)
-    messages = list(conversation.messages.all())
+    messages = list(conversation.messages.prefetch_related("sources"))
     # A trailing user message has no reply yet (e.g. the page was reloaded mid-stream):
     # render a placeholder that (re)connects to the stream.
     awaiting_reply = bool(messages) and messages[-1].role == Message.Role.USER
@@ -130,7 +140,8 @@ async def release_generation(conversation: Conversation) -> None:
 async def message_stream(request: HttpRequest, pk: int) -> HttpResponse:
     """Stream the assistant reply to the latest user message as Server-Sent Events.
 
-    Events: `thinking`, `token` {text}, `done` {usage, cost}, `failed` {error}.
+    Events: `sources` {sources}, `thinking`, `token` {text}, `citation` {source, cited_text},
+    `done` {usage, cost}, `failed` {error}.
     ("failed" rather than "error": EventSource reserves `error` for connection errors.)
     """
     user = await request.auser()
@@ -158,6 +169,10 @@ async def _event_stream(conversation: Conversation) -> AsyncIterator[str]:
         async for event in get_chat_service().stream_reply(conversation):
             logger.debug("SSE %s conversation=%s", type(event).__name__, conversation.pk)
             match event:
+                case SourcesFound(sources=sources):
+                    yield sse("sources", {"sources": [_source_data(s) for s in sources]})
+                case Cited(source=source, cited_text=cited_text):
+                    yield sse("citation", {"source": source, "cited_text": cited_text})
                 case ThinkingStarted():
                     yield sse("thinking", {})
                 case TextDelta(text=text):
@@ -173,6 +188,16 @@ async def _event_stream(conversation: Conversation) -> AsyncIterator[str]:
         await release_generation(conversation)
 
 
+def _source_data(source: Source) -> dict:
+    url = reverse("documents:document_detail", args=[source.document_id])
+    return {
+        "position": source.position,
+        "document": source.document_name,
+        "location": source.location,
+        "url": f"{url}#chunk-{source.chunk_index}",
+    }
+
+
 def _message_meta(message: Message) -> dict:
     return {
         "message_id": message.pk,
@@ -182,4 +207,7 @@ def _message_meta(message: Message) -> dict:
         "input_tokens": message.input_tokens,
         "output_tokens": message.output_tokens,
         "cost_usd": str(message.cost_usd) if message.cost_usd is not None else None,
+        "retrieval_cost_usd": (
+            str(message.retrieval_cost_usd) if message.retrieval_cost_usd is not None else None
+        ),
     }

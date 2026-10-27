@@ -1,8 +1,12 @@
 // Streams an assistant reply into its placeholder via Server-Sent Events.
 //
 // The server renders `<article data-stream-url=...>`; we open an EventSource to it and
-// append `token` events as plain text. LLM output is untrusted, so it is only ever
-// inserted with textContent, never innerHTML.
+// append `token` events as plain text. LLM output and document names are untrusted, so
+// they are only ever inserted as text nodes / textContent, never innerHTML.
+//
+// Citations: `sources` lists the chunks sent to the model; each `citation` event marks
+// the text streamed so far as supported by one of them. Footnotes are numbered in order
+// of first citation — the same rule as Message.citation_numbers on the server.
 (function () {
   "use strict";
 
@@ -17,6 +21,9 @@
       if (data.cost_usd != null) usage += ` · $${Number(data.cost_usd).toFixed(6)}`;
       parts.push(usage);
     }
+    if (data.retrieval_cost_usd != null) {
+      parts.push(`· search $${Number(data.retrieval_cost_usd).toFixed(6)}`);
+    }
     return parts.join(" ");
   }
 
@@ -29,7 +36,10 @@
     el.dataset.started = "1";
 
     const content = el.querySelector(".content");
+    const footnotes = el.querySelector(".sources");
     const meta = el.querySelector(".meta");
+    const sources = new Map(); // position -> {document, location, url}
+    const numbers = new Map(); // position -> footnote number
     const source = new EventSource(el.dataset.streamUrl);
     let finished = false;
 
@@ -42,13 +52,51 @@
       meta.textContent = text;
     }
 
+    source.addEventListener("sources", (event) => {
+      for (const s of JSON.parse(event.data).sources) sources.set(s.position, s);
+      meta.textContent = sources.size
+        ? `Found ${sources.size} relevant passages…`
+        : "No relevant passages found…";
+    });
+
+    source.addEventListener("citation", (event) => {
+      const data = JSON.parse(event.data);
+      const src = sources.get(data.source);
+      if (!numbers.has(data.source)) {
+        numbers.set(data.source, numbers.size + 1);
+        addFootnote(src);
+      }
+      const marker = document.createElement(src ? "a" : "span");
+      marker.className = "cite";
+      if (src) marker.href = src.url;
+      marker.title = data.cited_text;
+      marker.textContent = `[${numbers.get(data.source)}]`;
+      content.append(marker);
+    });
+
+    function addFootnote(src) {
+      const li = document.createElement("li");
+      if (src) {
+        const link = document.createElement("a");
+        link.href = src.url;
+        link.textContent = src.document;
+        li.append(link);
+        if (src.location) li.append(` · ${src.location}`);
+      } else {
+        li.textContent = "Unknown source";
+      }
+      footnotes.append(li);
+      footnotes.hidden = false;
+    }
+
     source.addEventListener("thinking", () => {
       meta.textContent = "Thinking…";
     });
 
     source.addEventListener("token", (event) => {
       if (!content.textContent) meta.textContent = "Writing…";
-      content.textContent += JSON.parse(event.data).text;
+      // append() adds a text node; `textContent +=` would wipe the citation markers.
+      content.append(JSON.parse(event.data).text);
       scrollToBottom();
     });
 

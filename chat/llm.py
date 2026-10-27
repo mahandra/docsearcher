@@ -146,6 +146,7 @@ class Cited:
     """The text streamed so far is supported by this source (Source.position)."""
 
     source: int
+    cited_text: str
 
 
 @dataclass(frozen=True)
@@ -416,7 +417,7 @@ class ChatService:
                         previous["cited_text"] += "\n\n" + citation["cited_text"]
                         continue
                     attempt.citations.append(citation)
-                    yield Cited(citation["source"])
+                    yield Cited(citation["source"], citation["cited_text"])
             attempt.final = await stream.get_final_message()
 
     async def _save(

@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
+from django.utils.functional import cached_property
 
 
 class Conversation(models.Model):
@@ -75,6 +77,47 @@ class Message(models.Model):
     def total_tokens(self) -> int:
         return (self.input_tokens or 0) + (self.output_tokens or 0)
 
+    # --- Citations, for rendering. Prefetch `sources` when rendering many messages. ---
+
+    @cached_property
+    def citation_numbers(self) -> dict[int, int]:
+        """Source position -> footnote number, numbered in order of first citation.
+
+        The prompt holds ~8 sources but an answer usually cites a few; numbering them
+        1, 2, 3 by appearance reads better than the raw positions (2, 5, 7).
+        stream.js numbers live citations the same way.
+        """
+        numbers: dict[int, int] = {}
+        for citation in self.citations:
+            numbers.setdefault(citation["source"], len(numbers) + 1)
+        return numbers
+
+    def content_segments(self) -> list[dict]:
+        """The answer split into text runs and citation markers, in order."""
+        sources = {s.position: s for s in self.sources.all()}
+        segments: list[dict] = []
+        start = 0
+        for citation in self.citations:
+            offset = min(citation["offset"], len(self.content))
+            if offset > start:
+                segments.append({"text": self.content[start:offset]})
+                start = offset
+            segments.append(
+                {
+                    "number": self.citation_numbers[citation["source"]],
+                    "cited_text": citation["cited_text"],
+                    "source": sources.get(citation["source"]),
+                }
+            )
+        if start < len(self.content):
+            segments.append({"text": self.content[start:]})
+        return segments
+
+    def footnotes(self) -> list["MessageSource"]:
+        """Cited sources in footnote order."""
+        sources = {s.position: s for s in self.sources.all()}
+        return [sources[p] for p in self.citation_numbers if p in sources]
+
 
 class MessageSource(models.Model):
     """A chunk that was put into the prompt for an assistant message.
@@ -112,9 +155,13 @@ class MessageSource(models.Model):
         return f"[{self.number}] {self.document_name} {self.location}".strip()
 
     @property
-    def number(self) -> int:
-        """1-based footnote number shown to the user."""
-        return self.position + 1
+    def url(self) -> str:
+        """Link to the chunk on the document page; empty if the document is gone."""
+        if self.document_id is None:
+            return ""
+        return reverse("documents:document_detail", args=[self.document_id]) + (
+            f"#chunk-{self.chunk_index}"
+        )
 
 
 def conversation_cost(conversation: Conversation) -> Decimal:

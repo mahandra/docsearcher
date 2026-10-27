@@ -1,6 +1,14 @@
 <article class="message {{ message.role }} {{ message.status }}">
-  <div class="content">{{ message.content }}</div>
+  {# One line on purpose: .content is white-space: pre-wrap, template whitespace would show. #}
+  <div class="content">{% for segment in message.content_segments %}{% if segment.number %}{% include "chat/partials/citation_marker.html" %}{% else %}{{ segment.text }}{% endif %}{% endfor %}</div>
   {% if message.role == "assistant" %}
+    {% with footnotes=message.footnotes %}
+      <ol class="sources"{% if not footnotes %} hidden{% endif %}>
+        {% for source in footnotes %}
+          <li>{% if source.url %}<a href="{{ source.url }}">{{ source.document_name }}</a>{% else %}{{ source.document_name }} <span class="muted">(deleted)</span>{% endif %}{% if source.location %} · {{ source.location }}{% endif %}</li>
+        {% endfor %}
+      </ol>
+    {% endwith %}
     <footer class="meta">
       {% if message.status == "interrupted" %}<span class="warn">Interrupted.</span>{% endif %}
       {% if message.status == "error" %}<span class="warn">Failed to get an answer.</span>{% endif %}
@@ -10,6 +18,7 @@
         {{ message.model }} · {{ message.input_tokens }} in / {{ message.output_tokens }} out
         {% if message.cost_usd is not None %}· ${{ message.cost_usd|floatformat:6 }}{% endif %}
       {% endif %}
+      {% if message.retrieval_cost_usd is not None %}· search ${{ message.retrieval_cost_usd|floatformat:6 }}{% endif %}
     </footer>
   {% endif %}
 </article>

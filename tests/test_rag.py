@@ -157,7 +157,6 @@ async def test_sources_are_saved_with_cited_flags(conversation, user):
     rows = [s async for s in MessageSource.objects.filter(message=events[-1].message)]
     assert [(s.position, s.cited) for s in rows] == [(0, False), (1, True)]
     assert rows[0].vector_rank == 1 and rows[1].keyword_rank == 2
-    assert rows[1].number == 2
     assert (rows[1].document_name, rows[1].location) == ("contract.pdf", "p. 3")
 
     # Deleting the document keeps the citation readable.
