@@ -9,6 +9,7 @@ from anthropic.types import CitationsSearchResultLocation, TextBlock, Usage
 from anthropic.types import Message as ApiMessage
 
 THINKING = object()  # marker: emit a thinking content_block_start event
+BLOCK_END = object()  # marker: close the current text block (content_block_stop)
 
 
 def cite(source: int, cited_text: str = "cited paragraph") -> CitationsSearchResultLocation:
@@ -71,8 +72,10 @@ def midstream_overloaded_error() -> anthropic.APIStatusError:
 class Script:
     """One scripted call to messages.stream().
 
-    `items` may contain text chunks (str), THINKING, citations (`cite()`), or an exception
-    to raise mid-stream.
+    `items` may contain text chunks (str), THINKING, citations (`cite()`), BLOCK_END, or an
+    exception to raise mid-stream. Citations belong to the current text block, which ends
+    at BLOCK_END or at the end of the script — as in the real API, a citation may appear
+    before the text of its block.
     `open_error` is raised when the stream is opened (after SDK retries, in real life).
     """
 
@@ -107,6 +110,12 @@ class FakeStream:
         self.closed = True
 
     async def __aiter__(self):
+        block: list[CitationsSearchResultLocation] | None = None  # None = no open text block
+
+        def block_stop():
+            content_block = SimpleNamespace(type="text", citations=block or None)
+            return SimpleNamespace(type="content_block_stop", content_block=content_block)
+
         for item in self.script.items:
             if isinstance(item, Exception):
                 raise item
@@ -114,11 +123,18 @@ class FakeStream:
                 yield SimpleNamespace(
                     type="content_block_start", content_block=SimpleNamespace(type="thinking")
                 )
+            elif item is BLOCK_END:
+                yield block_stop()
+                block = None
             elif isinstance(item, CitationsSearchResultLocation):
+                block = [*(block or []), item]
                 yield SimpleNamespace(type="citation", citation=item)
             else:
+                block = block or []
                 self.current_message_snapshot.usage.output_tokens += 1
                 yield SimpleNamespace(type="text", text=item)
+        if block is not None:
+            yield block_stop()
 
     async def get_final_message(self) -> ApiMessage:
         if self.script.final is not None:

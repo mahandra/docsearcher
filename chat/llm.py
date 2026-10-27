@@ -178,7 +178,7 @@ class _Attempt:
     """State of one streaming request, shared between the retry loop and the stream."""
 
     parts: list[str] = field(default_factory=list)
-    length: int = 0  # characters streamed so far = offset for the next citation
+    length: int = 0  # characters streamed so far = where a finished block ends
     citations: list[dict[str, Any]] = field(default_factory=list)
     stream: Any = None
     final: Any = None  # anthropic.types.Message once the stream finished
@@ -401,24 +401,31 @@ class ChatService:
                     attempt.parts.append(event.text)
                     attempt.length += len(event.text)
                     yield TextDelta(event.text)
-                elif event.type == "citation" and event.citation.type == "search_result_location":
-                    # Arrives after the text of the block it supports.
-                    citation = {
-                        "offset": attempt.length,
-                        "source": event.citation.search_result_index,
-                        "cited_text": event.citation.cited_text,
-                    }
-                    previous = attempt.citations[-1] if attempt.citations else None
-                    if previous and (previous["offset"], previous["source"]) == (
-                        citation["offset"],
-                        citation["source"],
-                    ):
-                        # Several paragraphs of one source cited for the same sentence.
-                        previous["cited_text"] += "\n\n" + citation["cited_text"]
-                        continue
-                    attempt.citations.append(citation)
-                    yield Cited(citation["source"], citation["cited_text"])
+                elif event.type == "content_block_stop" and event.content_block.type == "text":
+                    # The answer arrives as several text blocks; citations belong to a whole
+                    # block. Their `citation` deltas may come before the block's text, so we
+                    # wait for the block to finish and mark its end.
+                    for citation in self._block_citations(event.content_block, attempt.length):
+                        attempt.citations.append(citation)
+                        yield Cited(citation["source"], citation["cited_text"])
             attempt.final = await stream.get_final_message()
+
+    @staticmethod
+    def _block_citations(block: Any, offset: int) -> list[dict[str, Any]]:
+        """One citation per source in the block; several cited paragraphs are joined."""
+        by_source: dict[int, dict[str, Any]] = {}
+        for c in block.citations or []:
+            if c.type != "search_result_location":
+                continue
+            if c.search_result_index in by_source:
+                by_source[c.search_result_index]["cited_text"] += "\n\n" + c.cited_text
+            else:
+                by_source[c.search_result_index] = {
+                    "offset": offset,
+                    "source": c.search_result_index,
+                    "cited_text": c.cited_text,
+                }
+        return list(by_source.values())
 
     async def _save(
         self,

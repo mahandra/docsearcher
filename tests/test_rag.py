@@ -17,7 +17,7 @@ from chat.llm import (
 from chat.models import Message, MessageSource, conversation_cost
 from documents.models import Chunk, Document
 from tests.documents.fakes import fake_vector
-from tests.fakes import FakeClient, Script, cite
+from tests.fakes import BLOCK_END, FakeClient, Script, cite
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -112,9 +112,11 @@ async def test_citations_are_streamed_and_saved_with_offsets(conversation):
         [
             "Two months",
             cite(1, "Notice is two months."),
+            BLOCK_END,
             " in writing",
             cite(0, "Notice must be written."),
-            cite(0, "Signed by both parties."),  # same source, same spot: merged
+            cite(0, "Signed by both parties."),  # same source, same block: merged
+            BLOCK_END,
             ".",
         ]
     )
@@ -136,6 +138,28 @@ async def test_citations_are_streamed_and_saved_with_offsets(conversation):
         },
     ]
     assert saved.content[: saved.citations[0]["offset"]] == "Two months"
+
+
+async def test_citation_marks_the_end_of_its_block_even_if_it_arrives_first(conversation):
+    # Seen with the real API: the citation delta came before the text it supports.
+    await Message.objects.acreate(conversation=conversation, role="user", content="Notice?")
+    script = Script(["The period is ", BLOCK_END, cite(0), "two months", BLOCK_END, "."])
+    service, _ = make_service(script, retriever=FakeRetriever(Retrieval([make_source(0)])))
+
+    events = await collect(service, conversation)
+
+    saved = events[-1].message
+    offset = saved.citations[0]["offset"]
+    assert saved.content[:offset] == "The period is two months"
+    # Cited is emitted only once the block is complete, after its text.
+    assert [type(e).__name__ for e in events] == [
+        "SourcesFound",
+        "TextDelta",
+        "TextDelta",
+        "Cited",
+        "TextDelta",
+        "Completed",
+    ]
 
 
 async def test_sources_are_saved_with_cited_flags(conversation, user):
