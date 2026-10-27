@@ -134,6 +134,11 @@ EMBEDDING_TIMEOUT_SECONDS = env.float("EMBEDDING_TIMEOUT_SECONDS", default=60.0)
 CHUNK_SIZE_TOKENS = env.int("CHUNK_SIZE_TOKENS", default=500)
 CHUNK_OVERLAP_TOKENS = env.int("CHUNK_OVERLAP_TOKENS", default=75)
 
+# Retrieval: each search (vector, keyword) returns RETRIEVAL_CANDIDATES chunks; after
+# fusion the best RETRIEVAL_TOP_K go into the prompt.
+RETRIEVAL_TOP_K = env.int("RETRIEVAL_TOP_K", default=8)
+RETRIEVAL_CANDIDATES = env.int("RETRIEVAL_CANDIDATES", default=20)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
