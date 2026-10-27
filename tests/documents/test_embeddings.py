@@ -36,6 +36,26 @@ def test_embeds_documents_with_document_input_type():
     assert call["truncation"] is False
 
 
+def test_embeds_query_with_query_input_type():
+    client = FakeVoyageClient()
+
+    result = make_embedder(client).embed_query("what is the notice period?")
+
+    assert len(result.vectors) == 1
+    assert len(result.vectors[0]) == EMBEDDING_DIMENSIONS
+    assert result.total_tokens > 0
+    call = client.calls[0]
+    assert call["texts"] == ["what is the notice period?"]
+    assert call["input_type"] == "query"
+    assert call["output_dimension"] == EMBEDDING_DIMENSIONS
+
+
+def test_query_errors_are_mapped_like_document_errors():
+    client = FakeVoyageClient(errors=[voyage_errors.RateLimitError("slow down")])
+    with pytest.raises(TransientEmbeddingError):
+        make_embedder(client).embed_query("x")
+
+
 def test_batches_by_count_and_keeps_order():
     client = FakeVoyageClient()
     texts = [f"text {i}" for i in range(7)]

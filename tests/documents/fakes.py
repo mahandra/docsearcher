@@ -43,6 +43,7 @@ class FakeEmbedder:
     def __init__(self, errors: list[Exception] | None = None):
         self.errors = list(errors or [])
         self.calls: list[list[str]] = []
+        self.queries: list[str] = []
 
     def embed_documents(self, texts: list[str]) -> EmbeddingResult:
         self.calls.append(list(texts))
@@ -52,4 +53,12 @@ class FakeEmbedder:
             vectors=[fake_vector(t) for t in texts],
             total_tokens=sum(estimate_tokens(t) for t in texts),
             model=self.model,
+        )
+
+    def embed_query(self, text: str) -> EmbeddingResult:
+        self.queries.append(text)
+        if self.errors:
+            raise self.errors.pop(0)
+        return EmbeddingResult(
+            vectors=[fake_vector(text)], total_tokens=estimate_tokens(text), model=self.model
         )

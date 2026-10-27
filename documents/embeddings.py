@@ -47,6 +47,8 @@ class Embedder(Protocol):
 
     def embed_documents(self, texts: list[str]) -> EmbeddingResult: ...
 
+    def embed_query(self, text: str) -> EmbeddingResult: ...
+
 
 TRANSIENT_ERRORS = (
     voyage_errors.RateLimitError,
@@ -74,10 +76,16 @@ class VoyageEmbedder:
         vectors: list[list[float]] = []
         total_tokens = 0
         for batch in self._batches(texts):
-            result = self._embed_batch(batch)
+            result = self._embed_batch(batch, input_type="document")
             vectors.extend(result.embeddings)
             total_tokens += result.total_tokens
         return EmbeddingResult(vectors=vectors, total_tokens=total_tokens, model=self.model)
+
+    def embed_query(self, text: str) -> EmbeddingResult:
+        result = self._embed_batch([text], input_type="query")
+        return EmbeddingResult(
+            vectors=result.embeddings, total_tokens=result.total_tokens, model=self.model
+        )
 
     def _batches(self, texts: list[str]):
         """Group texts so each request stays under both the count and token limits."""
@@ -95,14 +103,15 @@ class VoyageEmbedder:
         if batch:
             yield batch
 
-    def _embed_batch(self, batch: list[str]) -> Any:
+    def _embed_batch(self, batch: list[str], *, input_type: str) -> Any:
         try:
             result = self.client.embed(
                 batch,
                 model=self.model,
-                # Asymmetric retrieval: documents and (in phase 3) queries are embedded
-                # with different instructions, which improves search quality.
-                input_type="document",
+                # Asymmetric retrieval: a short question and a long passage that answers
+                # it are phrased very differently. Voyage prepends a different instruction
+                # for "query" and "document", so both land close in the vector space.
+                input_type=input_type,
                 output_dimension=EMBEDDING_DIMENSIONS,
                 # Fail loudly instead of silently embedding a truncated chunk.
                 truncation=False,
