@@ -468,3 +468,29 @@ history = ["Как часто делаются резервные копии?"]
 question = "А как быстро восстановят систему, если она упадёт?"
 evidence = [{ doc = "security", text = "Целевое время восстановления критичных систем — не более 4 часов" }]
 facts = ["Не более 4 часов; допустимая потеря данных — до 24 часов."]
+
+# Elliptical follow-ups, as people actually write them: no subject, nothing to search for.
+
+[[cases]]
+id = "fu-probation-managers"
+category = "follow_up"
+history = ["Какой испытательный срок при приёме на работу?"]
+question = "А для руководителей?"
+evidence = [{ doc = "handbook", text = "Для руководителей отделов и главного бухгалтера испытательный срок составляет шесть месяцев" }]
+facts = ["Для руководителей отделов — шесть месяцев."]
+
+[[cases]]
+id = "fu-severity-2"
+category = "follow_up"
+history = ["How fast does Northwind respond to Severity 1 incidents?"]
+question = "And for less critical ones?"
+evidence = [{ doc = "agreement", text = "For Severity 2 incidents (a major function is impaired), the Provider responds within four (4) business hours" }]
+facts = ["Severity 2: within four business hours.", "Other requests: within two Business Days."]
+
+[[cases]]
+id = "fu-per-diem-russia"
+category = "follow_up"
+history = ["Какие суточные в заграничной командировке?"]
+question = "А по России?"
+evidence = [{ doc = "handbook", text = "Суточные при командировках по России составляют 1 000 рублей в день" }]
+facts = ["1 000 рублей в день."]
