@@ -19,7 +19,8 @@ Learning/portfolio project — the author is an experienced Django engineer new 
 - pytest + pytest-django + pytest-asyncio (`asyncio_mode = "auto"`), ruff.
 
 ## Architecture rules
-- **Only `chat/llm.py` imports the Anthropic SDK.** Views talk to the service layer and receive domain
+- **Only `chat/llm.py` imports the Anthropic SDK** (the dev-only eval judge, `evals/judge.py`,
+  has its own client). Views talk to the service layer and receive domain
   events (`SourcesFound`, `TextDelta`, `Cited`, `Completed`, `Failed`), never SDK objects.
 - System prompts live in `chat/prompts/*.md`, not in Python strings.
 - Model pricing lives in `chat/pricing.py`; cost is computed from `usage` and stored per message.

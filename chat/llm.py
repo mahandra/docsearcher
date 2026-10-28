@@ -89,8 +89,8 @@ class Retrieval:
 Retriever = Callable[[int, str], Awaitable[Retrieval]]
 
 
-async def retrieve_sources(user_id: int, query: str) -> Retrieval:
-    result = await sync_to_async(search)(user_id, query)
+async def retrieve_sources(user_id: int, query: str, *, embedder=None) -> Retrieval:
+    result = await sync_to_async(search)(user_id, query, embedder=embedder)
     return Retrieval(
         sources=[Source.from_hit(i, hit) for i, hit in enumerate(result.hits)],
         embedding_model=result.embedding_model,
