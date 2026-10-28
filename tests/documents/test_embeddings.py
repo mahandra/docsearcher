@@ -50,6 +50,16 @@ def test_embeds_query_with_query_input_type():
     assert call["output_dimension"] == EMBEDDING_DIMENSIONS
 
 
+def test_embeds_many_queries_in_one_request():
+    client = FakeVoyageClient()
+
+    result = make_embedder(client).embed_queries(["first?", "second?"])
+
+    assert len(result.vectors) == 2
+    assert len(client.calls) == 1
+    assert client.calls[0]["input_type"] == "query"
+
+
 def test_query_errors_are_mapped_like_document_errors():
     client = FakeVoyageClient(errors=[voyage_errors.RateLimitError("slow down")])
     with pytest.raises(TransientEmbeddingError):

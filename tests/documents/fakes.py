@@ -62,3 +62,13 @@ class FakeEmbedder:
         return EmbeddingResult(
             vectors=[fake_vector(text)], total_tokens=estimate_tokens(text), model=self.model
         )
+
+    def embed_queries(self, texts: list[str]) -> EmbeddingResult:
+        self.queries.extend(texts)
+        if self.errors:
+            raise self.errors.pop(0)
+        return EmbeddingResult(
+            vectors=[fake_vector(t) for t in texts],
+            total_tokens=sum(estimate_tokens(t) for t in texts),
+            model=self.model,
+        )

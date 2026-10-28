@@ -49,6 +49,8 @@ class Embedder(Protocol):
 
     def embed_query(self, text: str) -> EmbeddingResult: ...
 
+    def embed_queries(self, texts: list[str]) -> EmbeddingResult: ...
+
 
 TRANSIENT_ERRORS = (
     voyage_errors.RateLimitError,
@@ -73,19 +75,23 @@ class VoyageEmbedder:
         self.batch_size = batch_size or settings.EMBEDDING_BATCH_SIZE
 
     def embed_documents(self, texts: list[str]) -> EmbeddingResult:
+        return self._embed(texts, input_type="document")
+
+    def embed_query(self, text: str) -> EmbeddingResult:
+        return self._embed([text], input_type="query")
+
+    def embed_queries(self, texts: list[str]) -> EmbeddingResult:
+        """Many queries in as few requests as possible (evals; rate limits count requests)."""
+        return self._embed(texts, input_type="query")
+
+    def _embed(self, texts: list[str], *, input_type: str) -> EmbeddingResult:
         vectors: list[list[float]] = []
         total_tokens = 0
         for batch in self._batches(texts):
-            result = self._embed_batch(batch, input_type="document")
+            result = self._embed_batch(batch, input_type=input_type)
             vectors.extend(result.embeddings)
             total_tokens += result.total_tokens
         return EmbeddingResult(vectors=vectors, total_tokens=total_tokens, model=self.model)
-
-    def embed_query(self, text: str) -> EmbeddingResult:
-        result = self._embed_batch([text], input_type="query")
-        return EmbeddingResult(
-            vectors=result.embeddings, total_tokens=result.total_tokens, model=self.model
-        )
 
     def _batches(self, texts: list[str]):
         """Group texts so each request stays under both the count and token limits."""
