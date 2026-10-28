@@ -1,0 +1,470 @@
+# DocQA evaluation set.
+#
+# [[documents]]: the corpus. `source` is a Markdown file in corpus/, rendered to `format`
+# (pdf or docx) and uploaded under `name` — so the eval goes through the real ingestion.
+#
+# [[cases]]: one question each.
+# - evidence: exact quotes from the documents that answer the question. A retrieved chunk
+#   is relevant if it contains a quote (whitespace and case are ignored). Quotes, unlike
+#   chunk ids, survive re-chunking, so different chunk sizes can be compared.
+# - facts: what a correct answer must say (checked by the LLM judge).
+# - answerable = false: the documents do not answer it; the right reply says so.
+# - history: earlier user questions (follow-ups); only `question` is searched.
+#
+# Categories: paraphrase, exact (codes, numbers, clause ids), cross_lingual,
+# multi_hop (evidence from several places), unanswerable, follow_up.
+
+[[documents]]
+key = "agreement"
+source = "services_agreement.md"
+name = "Northwind - Bluefin Services Agreement.pdf"
+format = "pdf"
+
+[[documents]]
+key = "api"
+source = "tracking_api.md"
+name = "Bluefin Tracking API v2.pdf"
+format = "pdf"
+
+[[documents]]
+key = "handbook"
+source = "employee_handbook.md"
+name = "Положение о персонале.docx"
+format = "docx"
+
+[[documents]]
+key = "security"
+source = "security_policy.md"
+name = "Политика информационной безопасности.docx"
+format = "docx"
+
+# --- Services agreement (EN) -----------------------------------------------------------
+
+[[cases]]
+id = "agr-payment-terms"
+category = "paraphrase"
+question = "How long does the customer have to pay an invoice?"
+evidence = [{ doc = "agreement", text = "Invoices are payable within thirty (30) days of the invoice date" }]
+facts = ["Invoices are payable within 30 days of the invoice date."]
+
+[[cases]]
+id = "agr-late-interest"
+category = "paraphrase"
+question = "What happens if Bluefin pays late?"
+evidence = [{ doc = "agreement", text = "interest on the overdue amount at a rate of 1.5% per month" }]
+facts = ["The provider may charge interest of 1.5% per month on overdue undisputed amounts."]
+
+[[cases]]
+id = "agr-clause-4-2-1"
+category = "exact"
+question = "What does clause 4.2.1 say?"
+evidence = [{ doc = "agreement", text = "4.2.1 commits a material breach of this Agreement" }]
+facts = [
+    "A party may terminate immediately if the other commits a material breach.",
+    "A remediable breach must remain unremedied for 30 days after written notice.",
+]
+
+[[cases]]
+id = "agr-sla-credit"
+category = "exact"
+question = "What service credit applies if monthly availability drops to 98.5%?"
+evidence = [{ doc = "agreement", text = "If availability falls below 99.0%, the Service Credit is 15% of the monthly fee" }]
+facts = ["The service credit is 15% of the monthly fee."]
+
+[[cases]]
+id = "agr-liability-cap"
+category = "paraphrase"
+question = "Is there a limit on how much either side can be held liable for?"
+evidence = [{ doc = "agreement", text = "limited to an amount equal to the fees paid and payable by the Customer in the twelve (12) months" }]
+facts = ["Liability per contract year is capped at the fees paid and payable in the preceding 12 months."]
+
+[[cases]]
+id = "agr-sev1"
+category = "paraphrase"
+question = "How fast must the provider react when the whole platform is down?"
+evidence = [{ doc = "agreement", text = "the Provider responds within one (1) hour" }]
+facts = ["The provider responds within one hour, 24/7 (Severity 1)."]
+
+[[cases]]
+id = "agr-confidentiality"
+category = "paraphrase"
+question = "For how long after the contract ends must confidential information be kept secret?"
+evidence = [{ doc = "agreement", text = "continue for five (5) years after the termination of this Agreement" }]
+facts = ["Five years after termination.", "Trade secrets stay protected as long as they remain trade secrets."]
+
+[[cases]]
+id = "agr-renewal"
+category = "paraphrase"
+question = "Does the services agreement renew automatically, and how can renewal be avoided?"
+evidence = [
+    { doc = "agreement", text = "renews automatically for successive renewal periods of twelve (12) months" },
+    { doc = "agreement", text = "at least ninety (90) days before the end of the then-current term" },
+]
+facts = ["It renews automatically for 12-month periods.", "Notice of non-renewal must be given at least 90 days before the term ends."]
+
+[[cases]]
+id = "agr-data-export"
+category = "paraphrase"
+question = "Can the customer get its data back after the agreement ends?"
+evidence = [{ doc = "agreement", text = "available for export in CSV and JSON formats for a period of forty-five (45) days" }]
+facts = ["Data can be exported in CSV and JSON for 45 days after termination."]
+
+[[cases]]
+id = "agr-price-increase"
+category = "exact"
+question = "By how much can Northwind raise its fees each year?"
+evidence = [{ doc = "agreement", text = "Any single increase shall not exceed 5% of the fees" }]
+facts = ["At most 5%, once per calendar year, with at least 60 days written notice."]
+
+[[cases]]
+id = "agr-ru-termination"
+category = "cross_lingual"
+question = "За сколько дней нужно предупредить о расторжении договора на оказание услуг без особых причин?"
+evidence = [{ doc = "agreement", text = "terminate this Agreement for convenience by giving the other party at least sixty (60) days written notice" }]
+facts = ["Не менее чем за 60 дней письменно.", "В первоначальный срок клиент всё равно платит абонентскую плату до его конца."]
+
+[[cases]]
+id = "agr-ru-data-location"
+category = "cross_lingual"
+question = "Где хранятся данные клиента по договору с Northwind?"
+evidence = [{ doc = "agreement", text = "hosted in data centres located in Frankfurt, Germany" }]
+facts = ["Во Франкфурте (Германия); за пределы ЕЭЗ без согласия клиента не передаются."]
+
+[[cases]]
+id = "agr-ru-breach"
+category = "cross_lingual"
+question = "В какой срок Northwind должна сообщить клиенту об утечке персональных данных?"
+evidence = [{ doc = "agreement", text = "in any event within seventy-two (72) hours" }]
+facts = ["Без неоправданной задержки и в любом случае в течение 72 часов."]
+
+# --- Tracking API (EN) -----------------------------------------------------------------
+
+[[cases]]
+id = "api-rate-limit"
+category = "paraphrase"
+question = "How many calls can I make to the tracking API per minute?"
+evidence = [{ doc = "api", text = "600 requests per minute per API key" }]
+facts = ["600 requests per minute per API key.", "Batch endpoints count as ten requests."]
+
+[[cases]]
+id = "api-e4291"
+category = "exact"
+question = "What does error E-4291 mean and what should the client do?"
+evidence = [{ doc = "api", text = "responds with HTTP status 429 and error code E-4291" }]
+facts = ["The rate limit was exceeded.", "Wait for the Retry-After seconds and back off exponentially."]
+
+[[cases]]
+id = "api-e4041"
+category = "exact"
+question = "Why would I get E-4041?"
+evidence = [{ doc = "api", text = "E-4041: the tracking number does not exist or belongs to another partner" }]
+facts = ["The tracking number does not exist or belongs to another partner."]
+
+[[cases]]
+id = "api-webhook-retries"
+category = "paraphrase"
+question = "What happens if our webhook endpoint is down?"
+evidence = [{ doc = "api", text = "retried up to eight times with exponential backoff" }]
+facts = ["Delivery is retried up to 8 times with exponential backoff starting after one minute.", "Webhooks failing for three consecutive days are disabled."]
+
+[[cases]]
+id = "api-signature"
+category = "paraphrase"
+question = "How can I check that a webhook call really comes from Bluefin?"
+evidence = [{ doc = "api", text = "HMAC-SHA256 signature of the raw request body" }]
+facts = ["Verify the HMAC-SHA256 signature in X-Bluefin-Signature using the webhook secret.", "Reject requests whose timestamp is older than five minutes."]
+
+[[cases]]
+id = "api-parcel-weight"
+category = "exact"
+question = "What is the maximum weight of a parcel?"
+evidence = [{ doc = "api", text = "Each parcel may weigh at most 31.5 kg" }]
+facts = ["31.5 kg per parcel."]
+
+[[cases]]
+id = "api-duplicates"
+category = "paraphrase"
+question = "How do I avoid creating the same shipment twice when I retry a request?"
+evidence = [{ doc = "api", text = "clients should send an Idempotency-Key header with a unique value" }]
+facts = ["Send an Idempotency-Key header; repeats within 24 hours return the original response."]
+
+[[cases]]
+id = "api-key-expiry"
+category = "paraphrase"
+question = "Do API keys expire?"
+evidence = [{ doc = "api", text = "API keys expire after 365 days" }]
+facts = ["Keys expire after 365 days; a reminder is sent 30 days before."]
+
+[[cases]]
+id = "api-ru-retention"
+category = "cross_lingual"
+question = "Сколько хранятся данные об отправлениях в Tracking API?"
+evidence = [
+    { doc = "api", text = "retained for 90 days after delivery" },
+    { doc = "api", text = "Proof-of-delivery images, such as photos and signatures, are kept for 30 days after delivery" },
+]
+facts = ["90 дней после доставки, затем персональные данные обезличиваются.", "Фото и подписи о вручении хранятся 30 дней."]
+
+[[cases]]
+id = "api-ru-pagination"
+category = "cross_lingual"
+question = "Какой максимальный размер страницы при получении списка отправлений?"
+evidence = [{ doc = "api", text = "the default is 50 and the maximum is 200" }]
+facts = ["Максимум 200, по умолчанию 50."]
+
+[[cases]]
+id = "api-ru-cancel"
+category = "cross_lingual"
+question = "Можно ли отменить отправление, если посылку уже забрали?"
+evidence = [{ doc = "api", text = "Once the parcels have been picked up, a cancellation is no longer possible" }]
+facts = ["Нет, отмена возможна только в статусе CREATED; нужно оформить возврат."]
+
+# --- Employee handbook (RU) ------------------------------------------------------------
+
+[[cases]]
+id = "hb-vacation"
+category = "paraphrase"
+question = "Сколько дней отпуска мне положено?"
+evidence = [
+    { doc = "handbook", text = "отпуск продолжительностью 28 календарных дней" },
+    { doc = "handbook", text = "предоставляются три дополнительных дня отпуска в год" },
+]
+facts = ["28 календарных дней.", "После трёх лет работы — ещё три дня в год."]
+
+[[cases]]
+id = "hb-remote"
+category = "paraphrase"
+question = "Можно ли работать из дома?"
+evidence = [{ doc = "handbook", text = "могут работать удалённо до двух дней в неделю" }]
+facts = ["После испытательного срока — до двух дней в неделю по согласованию с руководителем.", "Полностью удалённо — только по решению директора по персоналу."]
+
+[[cases]]
+id = "hb-per-diem"
+category = "exact"
+question = "Какие суточные в заграничной командировке?"
+evidence = [{ doc = "handbook", text = "при заграничных командировках — 3 500 рублей в день" }]
+facts = ["3 500 рублей в день."]
+
+[[cases]]
+id = "hb-resignation"
+category = "paraphrase"
+question = "За сколько нужно предупредить об увольнении по собственному желанию?"
+evidence = [{ doc = "handbook", text = "не позднее чем за две недели до даты увольнения" }]
+facts = ["За две недели.", "На испытательном сроке — за три календарных дня."]
+
+[[cases]]
+id = "hb-probation"
+category = "paraphrase"
+question = "Какой испытательный срок у руководителя отдела?"
+evidence = [{ doc = "handbook", text = "Для руководителей отделов и главного бухгалтера испытательный срок составляет шесть месяцев" }]
+facts = ["Шесть месяцев."]
+
+[[cases]]
+id = "hb-training-budget"
+category = "exact"
+question = "Какой бюджет на обучение выделяется сотруднику?"
+evidence = [{ doc = "handbook", text = "бюджет на обучение в размере 60 000 рублей" }]
+facts = ["60 000 рублей в год; остаток на следующий год не переносится."]
+
+[[cases]]
+id = "hb-sick"
+category = "paraphrase"
+question = "Что делать, если я заболел?"
+evidence = [{ doc = "handbook", text = "в первый же день до 10:00" }]
+facts = ["Сообщить руководителю и в отдел кадров в первый день до 10:00.", "Передать номер электронного больничного не позднее следующего рабочего дня после закрытия."]
+
+[[cases]]
+id = "hb-overtime"
+category = "paraphrase"
+question = "Как оплачивается переработка?"
+evidence = [{ doc = "handbook", text = "Первые два часа сверхурочной работы оплачиваются в полуторном размере" }]
+facts = ["Первые два часа — в полуторном размере, далее — в двойном; можно взять отгул вместо оплаты."]
+
+[[cases]]
+id = "hb-en-carryover"
+category = "cross_lingual"
+question = "How many unused vacation days can be carried over to the next year?"
+evidence = [{ doc = "handbook", text = "переносятся на следующий год, но не более 10 дней" }]
+facts = ["At most 10 days."]
+
+[[cases]]
+id = "hb-en-internet"
+category = "cross_lingual"
+question = "Does the company pay for home internet for people working remotely?"
+evidence = [{ doc = "handbook", text = "1 500 рублей в месяц" }]
+facts = ["Yes, 1,500 roubles a month for those working remotely at least eight days a month."]
+
+# --- Security policy (RU) --------------------------------------------------------------
+
+[[cases]]
+id = "sec-password"
+category = "exact"
+question = "Какой минимальной длины должен быть пароль?"
+evidence = [{ doc = "security", text = "Пароль должен состоять не менее чем из 12 символов" }]
+facts = ["Не менее 12 символов; для административных учётных записей — не менее 16."]
+
+[[cases]]
+id = "sec-incident"
+category = "paraphrase"
+question = "Я кликнул по ссылке в подозрительном письме — что делать?"
+evidence = [{ doc = "security", text = "не позднее чем через 4 часа после обнаружения" }]
+facts = ["Сообщить в службу информационной безопасности в течение 4 часов (почта или телефон 777).", "Не пытаться устранять последствия самостоятельно."]
+
+[[cases]]
+id = "sec-sms"
+category = "exact"
+question = "Можно ли использовать SMS как второй фактор?"
+evidence = [{ doc = "security", text = "SMS-коды в качестве второго фактора не допускаются" }]
+facts = ["Нет; используется приложение-аутентификатор или аппаратный ключ."]
+
+[[cases]]
+id = "sec-backup"
+category = "paraphrase"
+question = "Как долго хранятся резервные копии?"
+evidence = [
+    { doc = "security", text = "создаются ежедневно и хранятся 30 дней" },
+    { doc = "security", text = "Ежемесячные копии хранятся в течение одного года" },
+]
+facts = ["Ежедневные — 30 дней.", "Ежемесячные — один год."]
+
+[[cases]]
+id = "sec-en-lockout"
+category = "cross_lingual"
+question = "How many failed login attempts lock an account?"
+evidence = [{ doc = "security", text = "После пяти неудачных попыток входа учётная запись блокируется на 15 минут" }]
+facts = ["Five failed attempts lock the account for 15 minutes."]
+
+[[cases]]
+id = "sec-en-usb"
+category = "cross_lingual"
+question = "Am I allowed to use a USB flash drive at work?"
+evidence = [{ doc = "security", text = "Использование USB-накопителей заблокировано" }]
+facts = ["No, USB drives are blocked; exceptions are agreed with the security team."]
+
+# --- Several places ----------------------------------------------------------------------
+
+[[cases]]
+id = "multi-breach-notice"
+category = "multi_hop"
+question = "Сравни сроки уведомления об утечке персональных данных в договоре с Northwind и в политике безопасности."
+evidence = [
+    { doc = "agreement", text = "in any event within seventy-two (72) hours" },
+    { doc = "security", text = "уведомляет Роскомнадзор в течение 24 часов" },
+]
+facts = ["По договору Northwind уведомляет клиента в течение 72 часов.", "По политике служба безопасности уведомляет Роскомнадзор в течение 24 часов."]
+
+[[cases]]
+id = "multi-notice-periods"
+category = "multi_hop"
+question = "What notice is needed to quit a job at Severny Veter, and to terminate the Northwind agreement for convenience?"
+evidence = [
+    { doc = "handbook", text = "не позднее чем за две недели до даты увольнения" },
+    { doc = "agreement", text = "terminate this Agreement for convenience by giving the other party at least sixty (60) days written notice" },
+]
+facts = ["Resigning: two weeks' notice.", "Terminating the agreement for convenience: at least 60 days' written notice."]
+
+[[cases]]
+id = "multi-remote-access"
+category = "multi_hop"
+question = "Что нужно, чтобы подключиться к внутренним системам из дома?"
+evidence = [
+    { doc = "handbook", text = "обязательно использование корпоративного VPN" },
+    { doc = "security", text = "Многофакторная аутентификация обязательна для доступа к корпоративной почте, VPN" },
+]
+facts = ["Корпоративный VPN.", "Многофакторная аутентификация (приложение или аппаратный ключ)."]
+
+# --- Not in the documents ----------------------------------------------------------------
+
+[[cases]]
+id = "no-breach-penalty"
+category = "unanswerable"
+answerable = false
+question = "What penalty does Northwind pay if it misses the 72-hour breach notification deadline?"
+
+[[cases]]
+id = "no-maternity"
+category = "unanswerable"
+answerable = false
+question = "Сколько длится декретный отпуск и доплачивает ли компания к пособию?"
+
+[[cases]]
+id = "no-python-sdk"
+category = "unanswerable"
+answerable = false
+question = "Is there an official Python SDK for the Tracking API?"
+
+[[cases]]
+id = "no-parking"
+category = "unanswerable"
+answerable = false
+question = "Есть ли у компании парковка для сотрудников?"
+
+[[cases]]
+id = "no-signatory"
+category = "unanswerable"
+answerable = false
+question = "Who signed the services agreement on behalf of Bluefin?"
+
+[[cases]]
+id = "no-graphql"
+category = "unanswerable"
+answerable = false
+question = "Does the Tracking API support GraphQL queries?"
+
+[[cases]]
+id = "no-guest-wifi"
+category = "unanswerable"
+answerable = false
+question = "Какой пароль от гостевого Wi-Fi в офисе?"
+
+[[cases]]
+id = "no-api-uptime"
+category = "unanswerable"
+answerable = false
+question = "What uptime does the Bluefin Tracking API guarantee?"
+
+[[cases]]
+id = "no-health-insurance"
+category = "unanswerable"
+answerable = false
+question = "Предоставляет ли компания сотрудникам ДМС?"
+
+[[cases]]
+id = "no-off-topic"
+category = "unanswerable"
+answerable = false
+question = "What is the capital of Australia?"
+
+# --- Follow-ups: only the last question is searched -------------------------------------
+
+[[cases]]
+id = "fu-sla-claim"
+category = "follow_up"
+history = ["What service credits apply under the Northwind agreement?"]
+question = "And how do I claim them?"
+evidence = [{ doc = "agreement", text = "must be claimed in writing within thirty (30) days after the end of the affected month" }]
+facts = ["In writing within 30 days after the end of the affected month."]
+
+[[cases]]
+id = "fu-vacation-split"
+category = "follow_up"
+history = ["Сколько дней отпуска положено сотруднику?"]
+question = "А его можно разделить?"
+evidence = [{ doc = "handbook", text = "одна из частей должна составлять не менее 14 календарных дней" }]
+facts = ["Да, но одна из частей — не менее 14 календарных дней."]
+
+[[cases]]
+id = "fu-webhook-timestamp"
+category = "follow_up"
+history = ["How are webhook requests signed?"]
+question = "What should I do if the timestamp is old?"
+evidence = [{ doc = "api", text = "reject requests whose X-Bluefin-Timestamp header is older than five minutes" }]
+facts = ["Reject requests whose timestamp is older than five minutes (replay protection)."]
+
+[[cases]]
+id = "fu-backup-restore"
+category = "follow_up"
+history = ["Как часто делаются резервные копии?"]
+question = "А как быстро восстановят систему, если она упадёт?"
+evidence = [{ doc = "security", text = "Целевое время восстановления критичных систем — не более 4 часов" }]
+facts = ["Не более 4 часов; допустимая потеря данных — до 24 часов."]
