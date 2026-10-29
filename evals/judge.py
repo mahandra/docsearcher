@@ -121,5 +121,6 @@ def get_judge(model: str = JUDGE_MODEL) -> Judge:
         api_key=settings.ANTHROPIC_API_KEY or None,
         max_retries=settings.LLM_MAX_RETRIES,
         timeout=settings.LLM_TIMEOUT_SECONDS,
+        open_telemetry=False,  # see get_chat_service
     )
     return Judge(client, model=model)

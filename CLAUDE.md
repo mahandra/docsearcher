@@ -49,6 +49,12 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   citations. `ChatService` takes a `retriever`; tests inject a fake one.
 - Read citations from the finished text block (`content_block_stop`), not from `citation` deltas:
   the API may send a block's citation before its text.
+- **Only `chat/tracing.py` imports `langfuse`.** One trace per reply (retrieval span + one
+  generation per API attempt, our own cost in `cost_details`); a no-op without
+  `LANGFUSE_*` keys and must never raise into the chat. Create observations with
+  `start_observation` (not `with start_as_current_observation`): `stream_reply` is an async
+  generator and an OTel current span must not live across `yield`. Tests clear the keys
+  (autouse fixture) and use an in-memory span exporter.
 - `MessageSource` copies document name/location; FKs to Chunk/Document are `SET_NULL` and are
   checked before saving (documents can vanish mid-generation).
 

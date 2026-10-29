@@ -15,6 +15,17 @@ def fake_query_embedder(monkeypatch):
     return embedder
 
 
+@pytest.fixture(autouse=True)
+def no_langfuse(settings):
+    """Real keys may be in .env: tests must never send traces to Langfuse."""
+    from chat.tracing import get_langfuse
+
+    settings.LANGFUSE_PUBLIC_KEY = settings.LANGFUSE_SECRET_KEY = ""
+    get_langfuse.cache_clear()
+    yield
+    get_langfuse.cache_clear()
+
+
 @pytest.fixture
 def user(django_user_model):
     return django_user_model.objects.create_user(username="alice", password="pw-alice-123")

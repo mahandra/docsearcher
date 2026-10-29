@@ -103,6 +103,14 @@ LLM_MAX_HISTORY_MESSAGES = env.int("LLM_MAX_HISTORY_MESSAGES", default=20)
 LLM_MAX_RETRIES = env.int("LLM_MAX_RETRIES", default=3)
 LLM_TIMEOUT_SECONDS = env.float("LLM_TIMEOUT_SECONDS", default=120.0)
 
+# Langfuse tracing (chat/tracing.py): off unless both keys are set.
+LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")
+LANGFUSE_SECRET_KEY = env("LANGFUSE_SECRET_KEY", default="")
+LANGFUSE_BASE_URL = env("LANGFUSE_BASE_URL", default="https://cloud.langfuse.com")
+LANGFUSE_ENVIRONMENT = env("LANGFUSE_ENVIRONMENT", default="development")
+# Questions, retrieved passages and answers are user data sent to a third party.
+LANGFUSE_CAPTURE_CONTENT = env.bool("LANGFUSE_CAPTURE_CONTENT", default=True)
+
 # --- Celery ---------------------------------------------------------------------------
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6380/0")
 # Task outcomes are stored on the Document itself, so no result backend is needed.

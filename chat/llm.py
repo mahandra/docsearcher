@@ -31,6 +31,7 @@ from documents.retrieval import SearchHit, search
 
 from .models import Conversation, Message, MessageSource
 from .pricing import estimate_cost, estimate_embedding_cost
+from .tracing import ReplyTrace, start_reply_trace
 
 logger = logging.getLogger(__name__)
 
@@ -281,9 +282,11 @@ class ChatService:
         max_stream_retries: int | None = None,
         retry_base_delay: float = 1.0,
         retriever: Retriever = retrieve_sources,
+        tracer: Callable[..., ReplyTrace] = start_reply_trace,
     ) -> None:
         self.client = client
         self.retriever = retriever
+        self.tracer = tracer
         self.model = model or settings.LLM_MODEL
         self.effort = settings.LLM_EFFORT if effort is None else effort
         self.max_tokens = max_tokens or settings.LLM_MAX_TOKENS
@@ -314,7 +317,12 @@ class ChatService:
             raise ValueError("The conversation must end with a user message")
 
         question = messages[-1]["content"]
+        trace = self.tracer(
+            user_id=conversation.user_id, conversation_id=conversation.pk, question=question
+        )
+        trace.start_retrieval(question)
         retrieval = await self.retriever(conversation.user_id, question)
+        trace.end_retrieval(retrieval)
         yield SourcesFound(retrieval.sources)
         messages[-1] = {"role": "user", "content": build_question_turn(question, retrieval.sources)}
         params = self._request_params(messages)
@@ -325,15 +333,19 @@ class ChatService:
         try:
             while True:
                 attempt = _Attempt()
+                trace.start_generation(params)
                 try:
                     async with aclosing(self._stream_once(params, attempt)) as events:
                         async for event in events:
+                            if isinstance(event, ThinkingStarted | TextDelta):
+                                trace.first_token()
                             yield event
                     final = attempt.final
                     saved = await self._save(
                         conversation,
                         attempt,
                         retrieval,
+                        trace,
                         Message.Status.COMPLETE,
                         model=final.model,
                         stop_reason=final.stop_reason or "",
@@ -355,6 +367,7 @@ class ChatService:
                         and attempt_no < self.max_stream_retries
                     ):
                         attempt_no += 1
+                        trace.fail_generation(str(exc))
                         delay = self.retry_base_delay * 2 ** (attempt_no - 1)
                         delay *= random.uniform(1, 1.5)  # jitter
                         logger.warning(
@@ -373,7 +386,13 @@ class ChatService:
                     )
                     status = Message.Status.INTERRUPTED if attempt.parts else Message.Status.ERROR
                     saved = await self._save(
-                        conversation, attempt, retrieval, status, usage=attempt.snapshot_usage()
+                        conversation,
+                        attempt,
+                        retrieval,
+                        trace,
+                        status,
+                        usage=attempt.snapshot_usage(),
+                        error=str(exc),
                     )
                     yield Failed(user_facing_error(exc), saved)
                     return
@@ -385,8 +404,10 @@ class ChatService:
                     conversation,
                     attempt,
                     retrieval,
+                    trace,
                     Message.Status.INTERRUPTED,
                     usage=attempt.snapshot_usage(),
+                    error="client disconnected",
                 )
 
     async def _stream_once(
@@ -434,11 +455,13 @@ class ChatService:
         conversation: Conversation,
         attempt: _Attempt,
         retrieval: Retrieval,
+        trace: ReplyTrace,
         status: str,
         *,
         model: str | None = None,
         stop_reason: str = "",
         usage: Any = None,
+        error: str = "",
     ) -> Message:
         model = model or self.model
         input_tokens = getattr(usage, "input_tokens", None)
@@ -496,6 +519,7 @@ class ChatService:
             for s in retrieval.sources
         )
         await Conversation.objects.filter(pk=conversation.pk).aupdate(updated_at=timezone.now())
+        trace.finish(message, error)
         return message
 
 
@@ -506,5 +530,8 @@ def get_chat_service() -> ChatService:
         api_key=settings.ANTHROPIC_API_KEY or None,
         max_retries=settings.LLM_MAX_RETRIES,
         timeout=settings.LLM_TIMEOUT_SECONDS,
+        # The SDK's own OpenTelemetry spans would reach Langfuse as separate traces with
+        # no user/session; chat/tracing.py records these calls with more detail.
+        open_telemetry=False,
     )
     return ChatService(client)
