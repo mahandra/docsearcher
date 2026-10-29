@@ -62,6 +62,11 @@ class Source:
     vector_rank: int | None = None
     keyword_rank: int | None = None
 
+    @property
+    def title(self) -> str:
+        """Document name plus location, as the model sees it in the search_result title."""
+        return f"{self.document_name} ({self.location})" if self.location else self.document_name
+
     @classmethod
     def from_hit(cls, position: int, hit: SearchHit) -> "Source":
         chunk = hit.chunk
@@ -105,13 +110,10 @@ def search_result_block(source: Source) -> dict[str, Any]:
     paragraphs: citations then point at (and quote) a paragraph, not the whole chunk.
     """
     paragraphs = [p.strip() for p in source.text.split("\n\n") if p.strip()] or [source.text]
-    title = source.document_name
-    if source.location:
-        title = f"{title} ({source.location})"
     return {
         "type": "search_result",
         "source": f"document:{source.document_id}#chunk-{source.chunk_index}",
-        "title": title,
+        "title": source.title,
         "content": [{"type": "text", "text": p} for p in paragraphs],
         # All-or-nothing per request: every search_result must use the same setting.
         "citations": {"enabled": True},

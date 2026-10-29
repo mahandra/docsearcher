@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from evals.dataset import Case, Evidence
-from evals.judge import Judge, Verdict, build_judge_input
+from evals.judge import Judge, Passage, Verdict, build_judge_input
 
 ANSWERABLE = Case(
     id="notice",
@@ -49,12 +49,13 @@ def fake_judge(parsed):
 
 
 def test_judge_input_has_history_reference_and_numbered_passages():
-    text = build_judge_input(ANSWERABLE, ["First passage.", "Second passage."], "Six months.")
+    passages = [Passage("Handbook (p. 2)", "First passage."), Passage("Policy", "Second passage.")]
+    text = build_judge_input(ANSWERABLE, passages, "Six months.")
 
     assert "<earlier_questions>\n- How long is the probation period?" in text
     assert "- Six months for managers." in text
-    assert '<passage index="1">\nFirst passage.' in text
-    assert '<passage index="2">\nSecond passage.' in text
+    assert '<passage index="1" title="Handbook (p. 2)">\nFirst passage.' in text
+    assert '<passage index="2" title="Policy">\nSecond passage.' in text
     assert text.endswith("<answer>\nSix months.\n</answer>")
 
 
@@ -68,7 +69,7 @@ def test_judge_input_for_unanswerable_question_without_passages():
 async def test_grade_uses_structured_output_and_records_cost():
     judge, messages = fake_judge(verdict(correctness="partial"))
 
-    judgement = await judge.grade(ANSWERABLE, ["p"], "a")
+    judgement = await judge.grade(ANSWERABLE, [Passage("t", "p")], "a")
 
     assert judgement.verdict.correctness == "partial"
     params = messages.calls[0]

@@ -8,7 +8,8 @@ You receive:
 - the question (and earlier questions of the same conversation, if any);
 - the reference: facts a correct answer must state, or a note that the documents do not
   answer the question;
-- the passages the assistant saw, numbered;
+- the passages the assistant saw, numbered, each with the title of its document (and its
+  location in it) exactly as the assistant saw it;
 - the assistant's answer.
 
 Judge each dimension independently:
@@ -29,7 +30,8 @@ Judge each dimension independently:
 
 3. faithful: true if every factual claim in the answer is supported by the passages.
    Judge this against the passages only, not against the reference or your own knowledge:
-   a claim that is true in the world but absent from the passages is unsupported. Saying
+   a claim that is true in the world but absent from the passages is unsupported. Passage
+   titles are part of the passages: naming a document by its title is supported. Saying
    that the documents do not contain something is not a factual claim. Quote each
    unsupported claim in unsupported_claims.
 

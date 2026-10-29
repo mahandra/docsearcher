@@ -126,6 +126,9 @@ def test_answers_are_generated_checked_and_judged(dataset, tmp_path, fakes):
     assert follow_up[2]["content"][-1]["text"] == "And in what form?"
     judged = {case_id: answer for case_id, _, answer in fakes.judge.calls}
     assert judged["writing"] == "In writing."
+    # The judge sees passage titles too: the model may name the document.
+    notice_passages = next(p for case_id, p, _ in fakes.judge.calls if case_id == "notice")
+    assert [p.title for p in notice_passages] == ["Policy.docx (Policy)"]
     assert Conversation.objects.filter(user__username="docqa-eval").count() == 3
 
 

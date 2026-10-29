@@ -38,6 +38,14 @@ class Verdict(BaseModel):
 
 
 @dataclass(frozen=True)
+class Passage:
+    """A source as the answering model saw it: the title matters, the model may name it."""
+
+    title: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Judgement:
     verdict: Verdict
     model: str
@@ -51,7 +59,7 @@ def load_judge_prompt() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8").strip()
 
 
-def build_judge_input(case: Case, passages: list[str], answer: str) -> str:
+def build_judge_input(case: Case, passages: list[Passage], answer: str) -> str:
     parts = []
     if case.history:
         earlier = "\n".join(f"- {q}" for q in case.history)
@@ -66,7 +74,8 @@ def build_judge_input(case: Case, passages: list[str], answer: str) -> str:
             "says so and does not invent the information.\n</reference>"
         )
     numbered = "\n\n".join(
-        f'<passage index="{i}">\n{text}\n</passage>' for i, text in enumerate(passages, start=1)
+        f'<passage index="{i}" title="{p.title}">\n{p.text}\n</passage>'
+        for i, p in enumerate(passages, start=1)
     )
     parts.append(f"<passages>\n{numbered or '(none)'}\n</passages>")
     parts.append(f"<answer>\n{answer}\n</answer>")
@@ -85,7 +94,7 @@ class Judge:
         self.model = model
         self.effort = effort
 
-    async def grade(self, case: Case, passages: list[str], answer: str) -> Judgement:
+    async def grade(self, case: Case, passages: list[Passage], answer: str) -> Judgement:
         response = await self.client.messages.parse(
             model=self.model,
             max_tokens=16000,

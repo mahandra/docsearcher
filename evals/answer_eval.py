@@ -19,7 +19,7 @@ from chat.llm import ChatService, Completed, Failed, Source, SourcesFound, retri
 from chat.models import Conversation, Message
 
 from .dataset import Case, contains
-from .judge import Judge, Verdict
+from .judge import Judge, Passage, Verdict
 from .metrics import average
 
 CORRECTNESS_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0}
@@ -73,7 +73,9 @@ async def run_case(case: Case, service: ChatService, judge: Judge, user) -> Answ
         cited_evidence = any(
             contains(sources[position].text, quote) for position in cited for quote in case.evidence
         )
-    judgement = await judge.grade(case, [s.text for s in sources], message.content)
+    judgement = await judge.grade(
+        case, [Passage(s.title, s.text) for s in sources], message.content
+    )
     return AnswerResult(
         id=case.id,
         category=case.category,
@@ -81,7 +83,7 @@ async def run_case(case: Case, service: ChatService, judge: Judge, user) -> Answ
         question=case.question,
         answer=message.content,
         status=message.status,
-        sources=[f"{s.document_name} ({s.location})" for s in sources],
+        sources=[s.title for s in sources],
         cited=cited,
         cited_evidence=cited_evidence,
         verdict=judgement.verdict.model_dump(),
