@@ -94,6 +94,7 @@ def run_retrieval_eval(
             "chunk_overlap_tokens": settings.CHUNK_OVERLAP_TOKENS,
             "top_k": top_k,
             "candidates": candidates,
+            "rrf_k": settings.RETRIEVAL_RRF_K,
             "chunks": Chunk.objects.filter(document__in=documents.values()).count(),
         },
         k_values=ks,

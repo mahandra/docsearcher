@@ -51,11 +51,37 @@ def test_rrf_prefers_chunks_found_by_both_searches():
     vector = [SearchHit(a, 0, vector_rank=1), SearchHit(b, 0, vector_rank=2)]
     keyword = [SearchHit(c, 0, keyword_rank=1), SearchHit(b, 0, keyword_rank=2)]
 
-    fused = reciprocal_rank_fusion(vector, keyword)
+    fused = reciprocal_rank_fusion(vector, keyword, k=60)
 
     assert ids(fused) == [2, 1, 3]  # b: 1/62 + 1/62 beats 1/61
     assert fused[0].vector_rank == 2 and fused[0].keyword_rank == 2
     assert fused[1].keyword_rank is None
+
+
+def top_hit_vs_weak_match():
+    """The vector top hit vs a chunk ranked 10th by both searches."""
+    top, weak = Chunk(pk=1), Chunk(pk=2)
+    fillers = [Chunk(pk=100 + i) for i in range(2, 10)]
+    vector = [top, *fillers, weak]
+    keyword = [Chunk(pk=200 + i) for i in range(1, 10)] + [weak]
+    return (
+        [SearchHit(c, 0, vector_rank=i) for i, c in enumerate(vector, start=1)],
+        [SearchHit(c, 0, keyword_rank=i) for i, c in enumerate(keyword, start=1)],
+    )
+
+
+def test_small_rrf_k_lets_the_top_hit_beat_a_weak_match_in_both_lists():
+    vector, keyword = top_hit_vs_weak_match()
+    # k=60: 1/70 + 1/70 > 1/61, the weak double match wins.
+    assert ids(reciprocal_rank_fusion(vector, keyword, k=60))[0] == 2
+    # k=5: 1/6 > 1/15 + 1/15, the top vector hit wins.
+    assert ids(reciprocal_rank_fusion(vector, keyword, k=5))[0] == 1
+
+
+def test_rrf_k_defaults_to_the_setting(settings):
+    vector, keyword = top_hit_vs_weak_match()
+    settings.RETRIEVAL_RRF_K = 60
+    assert ids(reciprocal_rank_fusion(vector, keyword))[0] == 2
 
 
 def test_rrf_with_one_empty_list_keeps_the_other_order():

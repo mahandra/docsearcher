@@ -8,6 +8,12 @@ Why two searches:
 Their scores are on unrelated scales (cosine distance vs ts_rank), so they are merged by
 *rank*, not by score: RRF(chunk) = sum over lists of 1 / (k + rank). A chunk found by both
 searches outranks one found by a single search; k damps the dominance of the top ranks.
+
+k = 60 (the RRF paper's value) suits fused lists of ~1000 results. With our 20 candidates
+it flattens the ranks so much that any keyword match beats the vector top hit: Russian
+questions about an English contract lost their best chunk to Russian chunks of unrelated
+documents. A small k keeps the top of each list decisive (see RETRIEVAL_RRF_K, chosen
+with `manage.py eval_retrieval`).
 """
 
 import logging
@@ -26,7 +32,6 @@ from .models import Chunk, Document
 
 logger = logging.getLogger(__name__)
 
-RRF_K = 60  # the constant from the original RRF paper; rarely worth tuning
 MAX_QUERY_TERMS = 32
 
 _WORD = re.compile(r"\w+")
@@ -143,8 +148,9 @@ def build_search_query(query: str) -> SearchQuery | None:
     return search_query
 
 
-def reciprocal_rank_fusion(*rankings: list[SearchHit], k: int = RRF_K) -> list[SearchHit]:
+def reciprocal_rank_fusion(*rankings: list[SearchHit], k: int | None = None) -> list[SearchHit]:
     """Merge ranked lists by RRF; per-search ranks and scores are kept for inspection."""
+    k = k or settings.RETRIEVAL_RRF_K
     merged: dict[int, SearchHit] = {}
     for ranking in rankings:
         for rank, hit in enumerate(ranking, start=1):

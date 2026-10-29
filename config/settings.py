@@ -139,6 +139,9 @@ CHUNK_OVERLAP_TOKENS = env.int("CHUNK_OVERLAP_TOKENS", default=75)
 # fusion the best RETRIEVAL_TOP_K go into the prompt.
 RETRIEVAL_TOP_K = env.int("RETRIEVAL_TOP_K", default=8)
 RETRIEVAL_CANDIDATES = env.int("RETRIEVAL_CANDIDATES", default=20)
+# RRF smoothing constant: smaller = the top ranks of each search weigh more. Tuned with
+# `manage.py eval_retrieval` (k=60 from the RRF paper lost cross-lingual hits).
+RETRIEVAL_RRF_K = env.int("RETRIEVAL_RRF_K", default=5)
 
 LOGGING = {
     "version": 1,
