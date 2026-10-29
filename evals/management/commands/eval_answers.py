@@ -2,11 +2,13 @@ import asyncio
 import json
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from chat.llm import get_chat_service
 from chat.models import Conversation
+from chat.tracing import get_langfuse
 from documents.embeddings import get_embedder
 from evals.answer_eval import (
     AnswerReport,
@@ -14,9 +16,11 @@ from evals.answer_eval import (
     format_summary,
     make_service,
     run_answer_eval,
+    run_case,
     summarize,
 )
 from evals.dataset import DATASET_PATH, EVALS_DIR, load_dataset
+from evals.experiment import run_experiment
 from evals.ingest import ensure_corpus, get_eval_user
 from evals.judge import JUDGE_MODEL, get_judge
 from evals.retrieval_eval import BatchedQueries
@@ -40,6 +44,12 @@ class Command(BaseCommand):
         parser.add_argument("--concurrency", type=int, default=4)
         parser.add_argument("--judge-model", default=JUDGE_MODEL)
         parser.add_argument("--yes", action="store_true", help="Confirm the API spend.")
+        parser.add_argument(
+            "--langfuse",
+            action="store_true",
+            help="Record the run as a Langfuse experiment (needs LANGFUSE_* keys).",
+        )
+        parser.add_argument("--run-name", help="Experiment run name (default: model + time).")
         parser.add_argument("--output", type=Path, help="JSON report path.")
 
     def handle(self, *args, **options):
@@ -56,6 +66,9 @@ class Command(BaseCommand):
         turns = sum(1 + len(c.history) for c in cases)
         estimate = turns * ESTIMATED_COST_PER_TURN
         self.stdout.write(f"{len(cases)} cases, {turns} answers: about ${estimate:.2f}.")
+        langfuse = get_langfuse() if options["langfuse"] else None
+        if options["langfuse"] and langfuse is None:
+            raise CommandError("--langfuse needs LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY.")
         if not options["yes"]:
             self.stdout.write("Dry run. Add --yes to call the API.")
             return
@@ -72,22 +85,42 @@ class Command(BaseCommand):
             mark = "ok" if result.verdict["correctness"] == "correct" else "--"
             self.stdout.write(f"  {mark} {result.id}: {result.verdict['correctness']}")
 
-        results = asyncio.run(
-            run_answer_eval(
+        run_settings = {
+            "model": service.model,
+            "effort": service.effort,
+            "judge_model": judge.model,
+            "judge_effort": judge.effort,
+            "rrf_k": str(settings.RETRIEVAL_RRF_K),
+            "top_k": str(settings.RETRIEVAL_TOP_K),
+        }
+        experiment_url = None
+        if langfuse is not None:
+            stamp = timezone.now().strftime("%Y-%m-%d %H:%M")
+            results, experiment_url = run_experiment(
+                langfuse,
                 cases,
-                service,
-                judge,
-                user,
+                lambda case: run_case(case, service, judge, user),
+                run_name=options["run_name"] or f"{service.model}/{service.effort} {stamp}",
                 concurrency=options["concurrency"],
+                metadata=run_settings,
                 on_result=progress,
             )
-        )
+            if failed := [c.id for c in cases if c.id not in {r.id for r in results}]:
+                raise CommandError(f"Failed cases (see the log above): {', '.join(failed)}")
+        else:
+            results = asyncio.run(
+                run_answer_eval(
+                    cases,
+                    service,
+                    judge,
+                    user,
+                    concurrency=options["concurrency"],
+                    on_result=progress,
+                )
+            )
         report = AnswerReport(
             settings={
-                "model": service.model,
-                "effort": service.effort,
-                "judge_model": judge.model,
-                "judge_effort": judge.effort,
+                **run_settings,
                 "documents": {key: d.original_name for key, d in documents.items()},
             },
             cases=sorted(results, key=lambda r: [c.id for c in cases].index(r.id)),
@@ -104,3 +137,5 @@ class Command(BaseCommand):
             json.dumps({"summary": summary, **report.to_dict()}, ensure_ascii=False, indent=2)
         )
         self.stdout.write(f"\nReport: {output}")
+        if experiment_url:
+            self.stdout.write(f"Langfuse experiment: {experiment_url}")

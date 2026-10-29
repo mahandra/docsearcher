@@ -58,6 +58,16 @@ Learning/portfolio project — the author is an experienced Django engineer new 
 - `MessageSource` copies document name/location; FKs to Chunk/Document are `SET_NULL` and are
   checked before saving (documents can vanish mid-generation).
 
+## Evals (`evals/`)
+- `evals/dataset.toml` + synthetic corpus `evals/corpus/` (rendered to PDF/DOCX deterministically),
+  ingested for the `docqa-eval` user. Reports go to `evals/results/` (gitignored).
+- `manage.py eval_retrieval`: free (one Voyage request), hit@k/MRR per mode and category.
+- `manage.py eval_answers`: real ChatService + LLM judge (Sonnet, `evals/prompts/judge.md`);
+  costs money — a dry run without `--yes`. `--langfuse` records the run as a Langfuse
+  experiment (`evals/experiment.py`, via `run_experiment`; grading stays ours).
+- The judge must see exactly what the answering model saw (passages with titles).
+- Tune with the cheap eval first, confirm with the answer eval on the affected cases only.
+
 ## Tests
 - No real API calls in tests, ever. Fakes: `tests/fakes.py` (Anthropic, incl. `cite()`),
   `tests/documents/fakes.py` (Voyage). An autouse fixture replaces the query embedder everywhere.

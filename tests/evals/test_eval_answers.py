@@ -1,12 +1,15 @@
+import asyncio
 import json
 import textwrap
 from types import SimpleNamespace
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from chat.models import Conversation
-from evals.answer_eval import summarize
+from evals.answer_eval import AnswerResult, summarize
+from evals.experiment import DATASET_NAME, scores
 from evals.judge import Judgement
 from tests.documents.fakes import FakeEmbedder
 from tests.evals.test_judge import verdict
@@ -154,3 +157,129 @@ def test_summary_scores_partial_answers_as_half():
     assert summary["overall"]["correctness"] == 0.75
     assert summary["failures"] == ["partial"]
     assert summary["cost_usd"]["judge"] == pytest.approx(0.04)
+
+
+# --- Langfuse experiment ----------------------------------------------------------
+
+
+class FakeLangfuse:
+    """Records dataset calls; runs an experiment the way the SDK calls our functions."""
+
+    def __init__(self):
+        self.items = {}
+        self.datasets = []
+        self.experiments = []
+        self.item_scores = {}
+
+    def create_dataset(self, *, name, description=None):
+        self.datasets.append(name)
+
+    def create_dataset_item(self, *, dataset_name, id, input, expected_output, metadata):
+        self.items[id] = SimpleNamespace(
+            id=id, input=input, expected_output=expected_output, metadata=metadata
+        )
+
+    def get_dataset(self, name):
+        return SimpleNamespace(items=list(self.items.values()))
+
+    def run_experiment(self, *, data, task, evaluators, run_evaluators, **kwargs):
+        async def run_all():
+            item_results = []
+            for item in data:  # sequential, like --concurrency 1
+                output = await task(item=item)
+                evaluation = [
+                    e
+                    for evaluator in evaluators
+                    for e in evaluator(
+                        input=item.input,
+                        output=output,
+                        expected_output=item.expected_output,
+                        metadata=item.metadata,
+                    )
+                ]
+                self.item_scores[item.metadata["case_id"]] = {
+                    e["name"]: e["value"] for e in evaluation
+                }
+                item_results.append(SimpleNamespace(item=item, output=output))
+            return [e for r in run_evaluators for e in r(item_results=item_results)]
+
+        self.run_scores = {e["name"]: e["value"] for e in asyncio.run(run_all())}
+        self.experiments.append(kwargs)
+        return SimpleNamespace(experiment_url="https://langfuse.test/experiment")
+
+
+@pytest.fixture
+def langfuse(monkeypatch):
+    client = FakeLangfuse()
+    monkeypatch.setattr("evals.management.commands.eval_answers.get_langfuse", lambda: client)
+    return client
+
+
+def test_run_is_recorded_as_a_langfuse_experiment(dataset, tmp_path, fakes, langfuse, capsys):
+    report = run(
+        dataset, tmp_path, "--yes", "--concurrency", "1", "--langfuse", "--run-name", "baseline"
+    )
+
+    assert langfuse.datasets == [DATASET_NAME]
+    item = langfuse.items[f"{DATASET_NAME}-writing"]
+    assert item.input == {
+        "question": "And in what form?",
+        "history": ["What is the notice period?"],
+    }
+    assert item.expected_output == {"answerable": True, "facts": ["In writing."]}
+    assert item.metadata == {"case_id": "writing", "category": "follow_up"}
+
+    experiment = langfuse.experiments[0]
+    assert experiment["run_name"] == "baseline"
+    assert experiment["max_concurrency"] == 1
+    assert experiment["metadata"]["model"] == report["settings"]["model"]
+
+    assert langfuse.item_scores["notice"]["cited_evidence"] == 1.0
+    assert "cited_evidence" not in langfuse.item_scores["parking"]  # unanswerable
+    assert langfuse.item_scores["parking"]["declined"] == 1.0
+    assert langfuse.run_scores["avg_correctness"] == 1.0
+
+    # The local report is written as usual.
+    assert [c["id"] for c in report["cases"]] == ["notice", "parking", "writing"]
+    assert "https://langfuse.test/experiment" in capsys.readouterr().out
+
+
+def test_langfuse_flag_needs_keys(dataset, tmp_path, fakes):
+    with pytest.raises(CommandError, match="LANGFUSE"):
+        run(dataset, tmp_path, "--langfuse")
+
+
+def test_scores_carry_the_judges_reasons():
+    result = AnswerResult(
+        id="x",
+        category="paraphrase",
+        answerable=True,
+        question="q",
+        answer="a",
+        status="complete",
+        sources=[],
+        cited=[],
+        cited_evidence=False,
+        verdict={
+            "reasoning": "Half right.",
+            "declined": False,
+            "correctness": "partial",
+            "missing_facts": ["In writing."],
+            "faithful": False,
+            "unsupported_claims": ["Call HR."],
+        },
+        answer_cost_usd=0.0,
+        judge_cost_usd=0.0,
+        conversation_id=1,
+    )
+
+    by_name = {s["name"]: s for s in scores(result)}
+
+    assert by_name["correctness"]["value"] == 0.5
+    assert by_name["correctness"]["comment"] == "Half right.\nMissing: In writing."
+    assert by_name["faithful"] == {
+        "name": "faithful",
+        "value": 0.0,
+        "comment": "Unsupported: Call HR.",
+    }
+    assert by_name["cited_evidence"]["value"] == 0.0
