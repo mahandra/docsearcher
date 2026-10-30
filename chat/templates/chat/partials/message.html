@@ -19,6 +19,8 @@
         {% if message.cost_usd is not None %}· ${{ message.cost_usd|floatformat:6 }}{% endif %}
       {% endif %}
       {% if message.retrieval_cost_usd is not None %}· search ${{ message.retrieval_cost_usd|floatformat:6 }}{% endif %}
+      {% if message.rewrite_cost_usd is not None %}· rewrite ${{ message.rewrite_cost_usd|floatformat:6 }}{% endif %}
+      {% if message.search_query %}· searched for: {{ message.search_query }}{% endif %}
     </footer>
   {% endif %}
 </article>

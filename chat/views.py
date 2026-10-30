@@ -210,6 +210,10 @@ def _message_meta(message: Message) -> dict:
         "prompt_tokens": message.prompt_tokens,
         "output_tokens": message.output_tokens,
         "cost_usd": str(message.cost_usd) if message.cost_usd is not None else None,
+        "search_query": message.search_query,
+        "rewrite_cost_usd": (
+            str(message.rewrite_cost_usd) if message.rewrite_cost_usd is not None else None
+        ),
         "retrieval_cost_usd": (
             str(message.retrieval_cost_usd) if message.retrieval_cost_usd is not None else None
         ),

@@ -65,6 +65,13 @@ class Message(models.Model):
         max_digits=12, decimal_places=6, null=True, blank=True, default=None
     )
 
+    # A follow-up rewritten into a standalone query (chat/rewrite.py) for the search;
+    # empty when the question was searched as typed. The rewrite is billed separately.
+    search_query = models.TextField(blank=True)
+    rewrite_cost_usd = models.DecimalField(
+        max_digits=12, decimal_places=6, null=True, blank=True, default=None
+    )
+
     # Where the answer cites its sources: [{"offset": int, "source": int, "cited_text": str}].
     # `offset` is the position in `content` right after the cited text; `source` is the
     # MessageSource.position (the search_result_index the API returned).
@@ -178,6 +185,8 @@ class MessageSource(models.Model):
 
 def conversation_cost(conversation: Conversation) -> Decimal:
     totals = conversation.messages.aggregate(
-        llm=models.Sum("cost_usd"), retrieval=models.Sum("retrieval_cost_usd")
+        llm=models.Sum("cost_usd"),
+        retrieval=models.Sum("retrieval_cost_usd"),
+        rewrite=models.Sum("rewrite_cost_usd"),
     )
-    return (totals["llm"] or Decimal("0")) + (totals["retrieval"] or Decimal("0"))
+    return sum((total or Decimal("0") for total in totals.values()), Decimal("0"))

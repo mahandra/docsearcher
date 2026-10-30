@@ -15,6 +15,7 @@ from chat.llm import (
     build_question_turn,
 )
 from chat.models import Message, MessageSource, conversation_cost
+from chat.rewrite import Rewrite
 from documents.models import Chunk, Document
 from tests.documents.fakes import fake_vector
 from tests.fakes import BLOCK_END, FakeClient, Script, cite
@@ -47,13 +48,28 @@ class FakeRetriever:
         return self.retrieval
 
 
-def make_service(*scripts, retriever=None):
+class FakeRewriter:
+    model = "claude-haiku-5-5"
+
+    def __init__(self, query: str) -> None:
+        self.query = query
+        self.calls: list[tuple[list, str]] = []
+
+    async def rewrite(self, history, question):
+        self.calls.append((history, question))
+        return Rewrite(
+            query=self.query, rewritten=True, model=self.model, cost_usd=Decimal("0.0001")
+        )
+
+
+def make_service(*scripts, retriever=None, rewriter=None):
     client = FakeClient(*scripts)
     service = ChatService(
         client,
         model="claude-opus-5-5",
         effort="low",
         retry_base_delay=0,
+        rewriter=rewriter,
         **({"retriever": retriever} if retriever else {}),
     )
     return service, client
@@ -100,6 +116,45 @@ async def test_only_the_latest_question_carries_search_results(conversation):
     assert messages[0] == {"role": "user", "content": "Old question"}
     assert messages[1]["content"][0]["text"] == "Old answer"  # cache breakpoint block
     assert messages[2]["content"][0]["type"] == "search_result"
+
+
+async def test_follow_up_is_searched_as_a_rewritten_query(conversation):
+    for role, content in [
+        ("user", "Probation?"),
+        ("assistant", "Three months."),
+        ("user", "Managers?"),
+    ]:
+        await Message.objects.acreate(conversation=conversation, role=role, content=content)
+    retriever = FakeRetriever(Retrieval([make_source()]))
+    rewriter = FakeRewriter("Probation period for managers?")
+    service, client = make_service(Script(["Six months."]), retriever=retriever, rewriter=rewriter)
+
+    events = await collect(service, conversation)
+
+    history, question = rewriter.calls[0]
+    assert [m["content"] for m in history] == ["Probation?", "Three months."]
+    assert question == "Managers?"
+    assert retriever.calls == [(conversation.user_id, "Probation period for managers?")]
+    # The model answers the user's own question; only the search used the rewrite.
+    assert client.messages.calls[0]["messages"][-1]["content"][-1]["text"] == "Managers?"
+    saved = events[-1].message
+    assert saved.search_query == "Probation period for managers?"
+    assert saved.rewrite_cost_usd == Decimal("0.000100")
+    total = await sync_to_async(conversation_cost)(conversation)
+    assert total == saved.cost_usd + saved.rewrite_cost_usd
+
+
+async def test_first_question_is_not_rewritten(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Probation?")
+    retriever = FakeRetriever(Retrieval([make_source()]))
+    rewriter = FakeRewriter("unused")
+    service, _ = make_service(Script(["ok"]), retriever=retriever, rewriter=rewriter)
+
+    events = await collect(service, conversation)
+
+    assert rewriter.calls == []
+    assert retriever.calls == [(conversation.user_id, "Probation?")]
+    assert events[-1].message.search_query == ""
 
 
 # --- Citations ------------------------------------------------------------------------

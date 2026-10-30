@@ -150,6 +150,40 @@ async def test_fallback_is_a_second_generation_with_the_other_model(langfuse, co
     assert [attr(g, "level") for g in generations] == ["ERROR", None]
 
 
+async def test_rewrite_is_a_generation_before_retrieval(langfuse, conversation):
+    from decimal import Decimal
+
+    from chat.rewrite import Rewrite
+
+    class Rewriter:
+        model = "claude-haiku-5-5"
+
+        async def rewrite(self, history, question):
+            return Rewrite(
+                query="Notice period?",
+                rewritten=True,
+                model=self.model,
+                input_tokens=1000,
+                output_tokens=40,
+                cost_usd=Decimal("0.00012"),
+            )
+
+    await Message.objects.acreate(conversation=conversation, role="user", content="Policy?")
+    await Message.objects.acreate(conversation=conversation, role="assistant", content="It...")
+    await reply(service(langfuse, Script(["Two months."]), rewriter=Rewriter()), conversation)
+
+    spans = langfuse.spans()
+    rewrite, retrieval = spans["rewrite"], spans["retrieval"]
+    assert rewrite.parent.span_id == spans["chat-reply"].context.span_id
+    assert rewrite.end_time <= retrieval.start_time
+    assert attr(rewrite, "type") == "generation"
+    assert attr(rewrite, "model.name") == "claude-haiku-5-5"
+    assert attr(rewrite, "output") == "Notice period?"
+    assert attr(rewrite, "usage_details") == {"input": 1000, "output": 40}
+    assert attr(rewrite, "cost_details") == {"total": 0.00012}
+    assert attr(retrieval, "input") == "Notice period?"
+
+
 async def test_content_capture_can_be_turned_off(langfuse, conversation, settings):
     settings.LANGFUSE_CAPTURE_CONTENT = False
     await reply(service(langfuse, Script(["Two months."])), conversation)

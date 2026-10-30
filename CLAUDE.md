@@ -62,6 +62,10 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   `start_observation` (not `with start_as_current_observation`): `stream_reply` is an async
   generator and an OTel current span must not live across `yield`. Tests clear the keys
   (autouse fixture) and use an in-memory span exporter.
+- Follow-ups are rewritten into a standalone search query before retrieval (`chat/rewrite.py`,
+  `LLM_REWRITE_MODEL`, structured outputs via `messages.parse(output_format=...)`). Only the
+  search uses the rewrite; the model answers the user's own question. Best-effort: any
+  failure searches the question as typed. The client comes from `chat/llm.py`.
 - `MessageSource` copies document name/location; FKs to Chunk/Document are `SET_NULL` and are
   checked before saving (documents can vanish mid-generation).
 
@@ -73,6 +77,8 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   costs money — a dry run without `--yes`. `--langfuse` records the run as a Langfuse
   experiment (`evals/experiment.py`, via `run_experiment`; grading stays ours).
 - The judge must see exactly what the answering model saw (passages with titles).
+- `eval_retrieval --rewrite` searches follow-ups the way the app does (Haiku, < $0.01).
+  Voyage vectors differ slightly between batches: a rank can move by one between runs.
 - Tune with the cheap eval first, confirm with the answer eval on the affected cases only.
 
 ## Tests

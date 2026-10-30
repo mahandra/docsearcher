@@ -113,3 +113,56 @@ def test_edited_corpus_replaces_the_old_version(dataset, tmp_path, embedder):
     documents = Document.objects.filter(user__username=EVAL_USERNAME)
     assert documents.count() == 1
     assert documents.get().status == Document.Status.READY
+
+
+def test_follow_ups_are_searched_as_rewritten_queries(
+    dataset, tmp_path, embedder, fake_query_embedder, monkeypatch
+):
+    from decimal import Decimal
+
+    from chat.rewrite import Rewrite
+
+    dataset.write_text(
+        dataset.read_text()
+        + textwrap.dedent("""
+            [[cases]]
+            id = "notice-form"
+            category = "follow_up"
+            history = ["What is the notice period?"]
+            question = "And in what form?"
+            evidence = [{ doc = "policy", text = "Notice must be given in writing" }]
+            facts = ["In writing."]
+        """)
+    )
+
+    class Rewriter:
+        model = "claude-haiku-5-5"
+        calls = []
+
+        async def rewrite(self, history, question):
+            self.calls.append((history, question))
+            return Rewrite(
+                query="In what form must notice be given?",
+                rewritten=True,
+                model=self.model,
+                cost_usd=Decimal("0.0001"),
+            )
+
+    rewriter = Rewriter()
+    monkeypatch.setattr(
+        "evals.management.commands.eval_retrieval.get_chat_service",
+        lambda: type("Service", (), {"rewriter": rewriter}),
+    )
+
+    report = run(dataset, tmp_path, "--rewrite")
+
+    # Only the follow-up is rewritten, with the earlier questions as its history.
+    assert rewriter.calls == [
+        ([{"role": "user", "content": "What is the notice period?"}], "And in what form?")
+    ]
+    case = next(c for c in report["cases"] if c["id"] == "notice-form")
+    assert case["question"] == "And in what form?"
+    assert case["query"] == "In what form must notice be given?"
+    assert "In what form must notice be given?" in fake_query_embedder.queries
+    assert report["settings"]["rewrite_model"] == "claude-haiku-5-5"
+    assert report["rewrite_cost_usd"] == pytest.approx(0.0001)

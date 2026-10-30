@@ -108,6 +108,10 @@ LLM_PROMPT_CACHING = env.bool("LLM_PROMPT_CACHING", default=True)
 # Used once per reply when the main model stays overloaded/unavailable after retries
 # (before any text was streamed). Empty disables the fallback.
 LLM_FALLBACK_MODEL = env("LLM_FALLBACK_MODEL", default="claude-sonnet-5-5")
+# A small model rewrites follow-up questions into standalone search queries
+# (chat/rewrite.py). Empty disables rewriting: the question is searched as typed.
+LLM_REWRITE_MODEL = env("LLM_REWRITE_MODEL", default="claude-haiku-5-5")
+LLM_REWRITE_EFFORT = env("LLM_REWRITE_EFFORT", default="low")
 
 # Langfuse tracing (chat/tracing.py): off unless both keys are set.
 LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")

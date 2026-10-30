@@ -3,6 +3,7 @@
 One trace per assistant reply:
 
     chat-reply (span)          question -> answer; user and conversation as session
+    ├── rewrite (generation)   follow-ups only: question -> standalone search query
     ├── retrieval (retriever)  query -> retrieved chunks, embedding usage and cost
     └── claude (generation)    one per API attempt: model, prompt, answer, usage, cost,
                                time to first token; failed attempts are marked ERROR
@@ -68,7 +69,7 @@ class ReplyTrace:
             "trace_name": TRACE_NAME,
             "tags": tags,
         }
-        self._root = self._retrieval = self._generation = None
+        self._root = self._rewrite = self._retrieval = self._generation = None
         self._first_token_seen = False
         if client is not None:
             self._root = self._safe(
@@ -78,6 +79,28 @@ class ReplyTrace:
     @property
     def trace_id(self) -> str | None:
         return self._root.trace_id if self._root is not None else None
+
+    def start_rewrite(self, model: str) -> None:
+        self._rewrite = self._child(name="rewrite", as_type="generation", model=model)
+
+    def end_rewrite(self, rewrite: Any) -> None:
+        """`rewrite` is a chat.rewrite.Rewrite."""
+        if self._rewrite is None:
+            return
+        self._end(
+            self._rewrite,
+            model=rewrite.model or None,
+            output=_content(rewrite.query),
+            usage_details=(
+                {"input": rewrite.input_tokens, "output": rewrite.output_tokens}
+                if rewrite.model
+                else None
+            ),
+            cost_details={"total": float(rewrite.cost_usd)} if rewrite.cost_usd else None,
+            level="WARNING" if rewrite.error else None,
+            status_message=rewrite.error or None,
+        )
+        self._rewrite = None
 
     def start_retrieval(self, query: str) -> None:
         self._retrieval = self._child(name="retrieval", as_type="retriever", input=_content(query))

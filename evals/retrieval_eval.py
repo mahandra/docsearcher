@@ -2,14 +2,20 @@
 
 Each question is searched once; the vector, keyword and fused (hybrid) rankings all come
 from that one call, so the three modes are compared on identical inputs.
+
+With a rewriter, follow-ups are searched as the app searches them: rewritten into a
+standalone query first (chat/rewrite.py). The eval history has the earlier questions only,
+not the answers the app would also show the rewriter.
 """
 
+import asyncio
 from dataclasses import asdict, dataclass, field
 from statistics import median
 
 from django.conf import settings
 
 from chat.pricing import estimate_embedding_cost
+from chat.rewrite import QueryRewriter, Rewrite
 from documents.embeddings import Embedder, EmbeddingResult, get_embedder
 from documents.models import Chunk, Document
 from documents.retrieval import SearchHit, search
@@ -34,10 +40,11 @@ class CaseResult:
     id: str
     category: str
     answerable: bool
-    query: str
+    query: str  # what was searched: the question, or its rewrite
     modes: dict[str, ModeResult]
     top_distance: float | None  # nearest chunk overall
     relevant_distance: float | None  # nearest relevant chunk
+    question: str = ""
 
 
 @dataclass
@@ -48,6 +55,7 @@ class RetrievalReport:
     unreachable: list[str] = field(default_factory=list)  # quotes split between chunks
     embedding_tokens: int = 0
     embedding_cost_usd: float = 0.0
+    rewrite_cost_usd: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,8 +89,23 @@ def k_values(top_k: int) -> list[int]:
     return sorted({1, 3, 5, top_k})
 
 
+async def rewrite_follow_ups(rewriter: QueryRewriter, cases: list[Case]) -> dict[str, Rewrite]:
+    async def one(case: Case) -> Rewrite:
+        history = [{"role": "user", "content": q} for q in case.history]
+        return await rewriter.rewrite(history, case.question)
+
+    follow_ups = [c for c in cases if c.history]
+    rewrites = await asyncio.gather(*(one(c) for c in follow_ups))
+    return {c.id: r for c, r in zip(follow_ups, rewrites, strict=True)}
+
+
 def run_retrieval_eval(
-    dataset: Dataset, documents: dict[str, Document], user, *, embedder=None
+    dataset: Dataset,
+    documents: dict[str, Document],
+    user,
+    *,
+    embedder=None,
+    rewriter: QueryRewriter | None = None,
 ) -> RetrievalReport:
     top_k, candidates = settings.RETRIEVAL_TOP_K, settings.RETRIEVAL_CANDIDATES
     ks = k_values(top_k)
@@ -95,18 +118,29 @@ def run_retrieval_eval(
             "top_k": top_k,
             "candidates": candidates,
             "rrf_k": settings.RETRIEVAL_RRF_K,
+            "rewrite_model": rewriter.model if rewriter else None,
             "chunks": Chunk.objects.filter(document__in=documents.values()).count(),
         },
         k_values=ks,
         cases=[],
         unreachable=unreachable_quotes(dataset, documents),
     )
-    queries = BatchedQueries(embedder or get_embedder(), [c.question for c in dataset.cases])
+    rewrites = asyncio.run(rewrite_follow_ups(rewriter, dataset.cases)) if rewriter else {}
+    failed = [f"{case_id}: {r.error}" for case_id, r in rewrites.items() if r.error]
+    if failed:
+        raise RuntimeError("Query rewriting failed:\n" + "\n".join(failed))
+    report.rewrite_cost_usd = float(sum(r.cost_usd or 0 for r in rewrites.values()))
+    query_of = {
+        c.id: rewrites[c.id].query if c.id in rewrites else c.question for c in dataset.cases
+    }
+
+    queries = BatchedQueries(embedder or get_embedder(), list(query_of.values()))
     report.embedding_tokens = queries.total_tokens
 
     for case in dataset.cases:
+        query = query_of[case.id]
         # limit=candidates: keep the whole fused list so every k can be scored.
-        result = search(user, case.question, limit=candidates, embedder=queries)
+        result = search(user, query, limit=candidates, embedder=queries)
         if result.vector_error:
             raise RuntimeError(f"Vector search failed for {case.id}: {result.vector_error}")
         rankings = {
@@ -124,7 +158,8 @@ def run_retrieval_eval(
                 id=case.id,
                 category=case.category,
                 answerable=case.answerable,
-                query=case.question,
+                question=case.question,
+                query=query,
                 modes={
                     mode: score(hits, case, labels, ks, top_k) for mode, hits in rankings.items()
                 },
@@ -241,10 +276,16 @@ def format_summary(report: RetrievalReport, summary: dict) -> str:
     if report.unreachable:
         lines += ["", "Quotes split between chunks (cannot be fully found):"]
         lines += [f"  {q}" for q in report.unreachable]
+    rewritten = [c for c in report.cases if c.question and c.query != c.question]
+    if rewritten:
+        lines += ["", f"Rewritten follow-ups ({s['rewrite_model']}):"]
+        lines += [f"  {c.id}: {c.question} -> {c.query}" for c in rewritten]
     lines += [
         "",
         f"Query embeddings: {report.embedding_tokens} tokens, ${report.embedding_cost_usd:.6f}",
     ]
+    if report.rewrite_cost_usd:
+        lines.append(f"Query rewriting: ${report.rewrite_cost_usd:.6f}")
     return "\n".join(lines)
 
 

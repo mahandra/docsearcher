@@ -4,7 +4,8 @@ Views call `ChatService.stream_reply()` and receive plain domain events
 (`SourcesFound`, `ThinkingStarted`, `TextDelta`, `Cited`, `Completed`, `Failed`), so the
 SDK can be swapped or mocked without touching the web layer.
 
-RAG: before each reply the latest question is searched in the user's documents and the
+RAG: before each reply the latest question is searched in the user's documents (a
+follow-up is first rewritten into a standalone query, see chat/rewrite.py) and the
 best chunks are sent as `search_result` blocks with citations enabled. Claude then
 attaches citations (which result, which text) to the parts of the answer they support;
 no "[1]" markers have to be prompted for or parsed.
@@ -31,6 +32,7 @@ from documents.retrieval import SearchHit, search
 
 from .models import Conversation, Message, MessageSource
 from .pricing import estimate_cost, estimate_embedding_cost
+from .rewrite import QueryRewriter, Rewrite
 from .tracing import ReplyTrace, start_reply_trace
 
 logger = logging.getLogger(__name__)
@@ -314,9 +316,11 @@ class ChatService:
         tracer: Callable[..., ReplyTrace] = start_reply_trace,
         prompt_caching: bool | None = None,
         fallback_model: str | None = None,
+        rewriter: QueryRewriter | None = None,
     ) -> None:
         self.client = client
         self.retriever = retriever
+        self.rewriter = rewriter
         self.tracer = tracer
         self.model = model or settings.LLM_MODEL
         self.effort = settings.LLM_EFFORT if effort is None else effort
@@ -359,8 +363,13 @@ class ChatService:
         trace = self.tracer(
             user_id=conversation.user_id, conversation_id=conversation.pk, question=question
         )
-        trace.start_retrieval(question)
-        retrieval = await self.retriever(conversation.user_id, question)
+        rewrite = Rewrite(query=question)
+        if self.rewriter is not None and len(messages) > 1:
+            trace.start_rewrite(self.rewriter.model)
+            rewrite = await self.rewriter.rewrite(messages[:-1], question)
+            trace.end_rewrite(rewrite)
+        trace.start_retrieval(rewrite.query)
+        retrieval = await self.retriever(conversation.user_id, rewrite.query)
         trace.end_retrieval(retrieval)
         yield SourcesFound(retrieval.sources)
         messages[-1] = {"role": "user", "content": build_question_turn(question, retrieval.sources)}
@@ -384,6 +393,7 @@ class ChatService:
                         conversation,
                         attempt,
                         retrieval,
+                        rewrite,
                         trace,
                         Message.Status.COMPLETE,
                         model=final.model,
@@ -443,6 +453,7 @@ class ChatService:
                         conversation,
                         attempt,
                         retrieval,
+                        rewrite,
                         trace,
                         status,
                         model=params["model"],
@@ -459,6 +470,7 @@ class ChatService:
                     conversation,
                     attempt,
                     retrieval,
+                    rewrite,
                     trace,
                     Message.Status.INTERRUPTED,
                     model=params["model"],
@@ -521,6 +533,7 @@ class ChatService:
         conversation: Conversation,
         attempt: _Attempt,
         retrieval: Retrieval,
+        rewrite: Rewrite,
         trace: ReplyTrace,
         status: str,
         *,
@@ -562,6 +575,8 @@ class ChatService:
             cost_usd=cost,
             retrieval_tokens=retrieval.embedding_tokens if retrieval.embedding_model else None,
             retrieval_cost_usd=retrieval_cost,
+            search_query=rewrite.query if rewrite.rewritten else "",
+            rewrite_cost_usd=rewrite.cost_usd,
             citations=attempt.citations,
         )
         cited = {c["source"] for c in attempt.citations}
@@ -610,4 +625,12 @@ def get_chat_service() -> ChatService:
         # no user/session; chat/tracing.py records these calls with more detail.
         open_telemetry=False,
     )
-    return ChatService(client)
+    rewriter = None
+    if settings.LLM_REWRITE_MODEL:
+        rewriter = QueryRewriter(
+            client,
+            model=settings.LLM_REWRITE_MODEL,
+            effort=settings.LLM_REWRITE_EFFORT,
+            prompt=load_prompt("rewrite"),
+        )
+    return ChatService(client, rewriter=rewriter)

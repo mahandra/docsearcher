@@ -26,6 +26,10 @@
     if (data.retrieval_cost_usd != null) {
       parts.push(`· search $${Number(data.retrieval_cost_usd).toFixed(6)}`);
     }
+    if (data.rewrite_cost_usd != null) {
+      parts.push(`· rewrite $${Number(data.rewrite_cost_usd).toFixed(6)}`);
+    }
+    if (data.search_query) parts.push(`· searched for: ${data.search_query}`);
     return parts.join(" ");
   }
 

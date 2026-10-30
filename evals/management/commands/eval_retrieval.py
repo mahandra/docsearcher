@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
+from chat.llm import get_chat_service
 from evals.dataset import DATASET_PATH, EVALS_DIR, load_dataset
 from evals.ingest import ensure_corpus, get_eval_user
 from evals.retrieval_eval import format_summary, run_retrieval_eval, summarize
@@ -22,12 +24,23 @@ class Command(BaseCommand):
             action="store_true",
             help="Re-chunk and re-embed the corpus (needed after changing CHUNK_* settings).",
         )
+        parser.add_argument(
+            "--rewrite",
+            action="store_true",
+            help="Rewrite follow-ups into standalone queries first, as the app does "
+            "(one LLM_REWRITE_MODEL call per follow-up: a fraction of a cent).",
+        )
         parser.add_argument("--output", type=Path, help="JSON report path.")
 
-    def handle(self, *args, dataset, reingest, output, **options):
+    def handle(self, *args, dataset, reingest, rewrite, output, **options):
+        rewriter = None
+        if rewrite:
+            if not settings.LLM_REWRITE_MODEL:
+                raise CommandError("--rewrite needs LLM_REWRITE_MODEL")
+            rewriter = get_chat_service().rewriter
         data = load_dataset(dataset)
         documents = ensure_corpus(data, reingest=reingest)
-        report = run_retrieval_eval(data, documents, get_eval_user())
+        report = run_retrieval_eval(data, documents, get_eval_user(), rewriter=rewriter)
         summary = summarize(report)
         self.stdout.write(format_summary(report, summary))
 
