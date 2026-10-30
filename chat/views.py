@@ -203,6 +203,7 @@ def _message_meta(message: Message) -> dict:
         "message_id": message.pk,
         "status": message.status,
         "stop_reason": message.stop_reason,
+        "uncited": message.uncited,
         "model": message.model,
         "input_tokens": message.input_tokens,
         "cache_read_tokens": message.cache_read_tokens,

@@ -71,6 +71,7 @@ async def test_streams_tokens_then_done(client, conversation, fake_llm):
     assert done["status"] == "complete"
     assert done["input_tokens"] == 100 and done["output_tokens"] == 20
     assert done["cost_usd"] == "0.000800"
+    assert done["uncited"] is False  # no sources, nothing to cite
 
     await conversation.arefresh_from_db()
     assert conversation.generation_started_at is None  # lock released

@@ -40,4 +40,4 @@ class MessageAdmin(admin.ModelAdmin):
         "cost_usd",
         "created_at",
     )
-    list_filter = ("role", "status", "model")
+    list_filter = ("role", "status", "model", "uncited")

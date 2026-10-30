@@ -578,6 +578,12 @@ class ChatService:
             search_query=rewrite.query if rewrite.rewritten else "",
             rewrite_cost_usd=rewrite.cost_usd,
             citations=attempt.citations,
+            uncited=(
+                status == Message.Status.COMPLETE
+                and bool(retrieval.sources)
+                and bool(attempt.parts)
+                and not attempt.citations
+            ),
         )
         cited = {c["source"] for c in attempt.citations}
         # Generation takes a while: a document may have been deleted or re-processed

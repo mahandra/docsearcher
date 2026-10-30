@@ -184,6 +184,15 @@ async def test_rewrite_is_a_generation_before_retrieval(langfuse, conversation):
     assert attr(retrieval, "input") == "Notice period?"
 
 
+async def test_uncited_answer_is_a_warning(langfuse, conversation):
+    await reply(service(langfuse, Script(["Two months."])), conversation)
+
+    root = langfuse.spans()["chat-reply"]
+    assert attr(root, "level") == "WARNING"
+    assert attr(root, "status_message") == "the answer cites no sources"
+    assert attr(root, "metadata.uncited") == "true"  # metadata values are serialized
+
+
 async def test_content_capture_can_be_turned_off(langfuse, conversation, settings):
     settings.LANGFUSE_CAPTURE_CONTENT = False
     await reply(service(langfuse, Script(["Two months."])), conversation)

@@ -16,6 +16,7 @@
     if (data.status === "error") parts.push("Failed to get an answer.");
     if (data.stop_reason === "max_tokens") parts.push("Answer truncated (max tokens).");
     if (data.stop_reason === "refusal") parts.push("The model declined to answer.");
+    if (data.uncited) parts.push("No citations: check this answer against your documents.");
     if (data.input_tokens != null) {
       let usage = `${data.model} · ${data.prompt_tokens} in`;
       if (data.cache_read_tokens) usage += ` (${data.cache_read_tokens} cached)`;

@@ -13,6 +13,7 @@
       {% if message.status == "interrupted" %}<span class="warn">Interrupted.</span>{% endif %}
       {% if message.status == "error" %}<span class="warn">Failed to get an answer.</span>{% endif %}
       {% if message.stop_reason == "max_tokens" %}<span class="warn">Answer truncated (max tokens).</span>{% endif %}
+      {% if message.uncited %}<span class="warn">No citations: check this answer against your documents.</span>{% endif %}
       {% if message.stop_reason == "refusal" %}<span class="warn">The model declined to answer.</span>{% endif %}
       {% if message.input_tokens is not None %}
         {{ message.model }} · {{ message.prompt_tokens }} in{% if message.cache_read_tokens %} ({{ message.cache_read_tokens }} cached){% endif %} / {{ message.output_tokens }} out

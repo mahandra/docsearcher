@@ -94,6 +94,16 @@ def test_llm_output_is_html_escaped(auth_client, conversation):
     assert "&lt;script&gt;" in response.text
 
 
+def test_uncited_answer_carries_a_warning(auth_client, conversation):
+    Message.objects.create(conversation=conversation, role="user", content="Hi")
+    Message.objects.create(conversation=conversation, role="assistant", content="Two months.")
+    url = reverse("chat:conversation_detail", args=[conversation.pk])
+    assert "No citations" not in auth_client.get(url).text
+
+    Message.objects.filter(role="assistant").update(uncited=True)
+    assert "No citations: check this answer" in auth_client.get(url).text
+
+
 def test_other_users_conversation_is_404(client, conversation, django_user_model):
     bob = django_user_model.objects.create_user(username="bob", password="pw-bob-123")
     client.force_login(bob)

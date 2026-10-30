@@ -302,3 +302,37 @@ async def test_sources_of_chunks_deleted_during_generation_are_saved_unlinked(co
     row = await MessageSource.objects.aget(message=events[-1].message)
     assert (row.chunk_id, row.document_id, row.cited) == (None, None, True)
     assert row.document_name == "contract.pdf"
+
+
+# --- Answers without citations -----------------------------------------------------------
+
+
+async def ask(conversation, script, sources):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Notice?")
+    retriever = FakeRetriever(Retrieval(sources))
+    service, _ = make_service(script, retriever=retriever)
+    events = await collect(service, conversation)
+    return events[-1].message
+
+
+async def test_answer_that_cites_none_of_its_sources_is_flagged(conversation):
+    message = await ask(conversation, Script(["Two months."]), [make_source()])
+    assert message.uncited
+
+
+async def test_cited_answer_is_not_flagged(conversation):
+    message = await ask(conversation, Script(["Two months.", cite(0)]), [make_source()])
+    assert not message.uncited
+
+
+async def test_answer_without_sources_to_cite_is_not_flagged(conversation):
+    message = await ask(conversation, Script(["Nothing found."]), [])
+    assert not message.uncited
+
+
+async def test_unfinished_answer_is_not_flagged(conversation):
+    from tests.fakes import auth_error
+
+    message = await ask(conversation, Script(open_error=auth_error()), [make_source()])
+    assert message.status == Message.Status.ERROR
+    assert not message.uncited

@@ -183,10 +183,16 @@ class ReplyTrace:
             )
             self._generation = None
         if self._root is not None:
+            if message.uncited:  # the call succeeded; the reply as a whole is suspect
+                level, status_message = "WARNING", "the answer cites no sources"
             self._end(
                 self._root,
                 output=_content(message.content),
-                metadata={"message_id": message.pk, "status": message.status},
+                metadata={
+                    "message_id": message.pk,
+                    "status": message.status,
+                    "uncited": message.uncited,
+                },
                 level=level,
                 status_message=status_message,
             )

@@ -54,6 +54,8 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   `citations: {enabled: true}` (all-or-nothing per request). Never send `citations` back inside a
   `user` message (400 on API version 2026-10-21). Do not prompt for `[n]` markers — use native
   citations. `ChatService` takes a `retriever`; tests inject a fake one.
+- A complete answer that had sources but cites none is flagged (`Message.uncited`): a warning
+  in the UI, WARNING level on the trace. It is not retried or hidden.
 - Read citations from the finished text block (`content_block_stop`), not from `citation` deltas:
   the API may send a block's citation before its text.
 - **Only `chat/tracing.py` imports `langfuse`.** One trace per reply (retrieval span + one

@@ -76,6 +76,9 @@ class Message(models.Model):
     # `offset` is the position in `content` right after the cited text; `source` is the
     # MessageSource.position (the search_result_index the API returned).
     citations = models.JSONField(default=list, blank=True)
+    # A complete answer that cites none of the passages it was given: the user cannot
+    # check it against the documents. Correct declines are uncited too.
+    uncited = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["created_at", "id"]
