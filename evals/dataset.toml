@@ -494,3 +494,70 @@ history = ["Какие суточные в заграничной команди
 question = "А по России?"
 evidence = [{ doc = "handbook", text = "Суточные при командировках по России составляют 1 000 рублей в день" }]
 facts = ["1 000 рублей в день."]
+
+# Follow-ups whose own words point somewhere else in the corpus: only the history says
+# what they are about (the cases above are found even without it).
+
+[[cases]]
+id = "fu-fee-increase"
+category = "follow_up"
+history = ["What is the monthly fee under the Northwind agreement?"]
+question = "Can they raise it?"
+evidence = [{ doc = "agreement", text = "The Provider may increase the fees once per calendar year by giving at least sixty (60) days written notice" }]
+facts = ["Yes, once per calendar year with at least 60 days written notice.", "An increase may not exceed 5%."]
+
+[[cases]]
+id = "fu-data-export"
+category = "follow_up"
+history = ["What happens to our data when the Northwind agreement ends?"]
+question = "How long do we have to download it?"
+evidence = [{ doc = "agreement", text = "make the Customer Data available for export in CSV and JSON formats for a period of forty-five (45) days" }]
+facts = ["45 days (export in CSV and JSON)."]
+
+[[cases]]
+id = "fu-freight"
+category = "follow_up"
+history = ["How many parcels can one shipment contain?"]
+question = "And what if I have more?"
+evidence = [{ doc = "api", text = "Larger consignments must be booked as freight through the Freight API" }]
+facts = ["Book it as freight through the Freight API."]
+
+[[cases]]
+id = "fu-rate-limit-exceeded"
+category = "follow_up"
+history = ["What is the rate limit of the tracking API?"]
+question = "What happens if I go over it?"
+evidence = [{ doc = "api", text = "When the limit is exceeded, the API responds with HTTP status 429 and error code E-4291" }]
+facts = ["HTTP 429 with error code E-4291 and a Retry-After header.", "Keys that keep exceeding it for more than ten minutes are blocked for one hour."]
+
+[[cases]]
+id = "fu-pod-photos"
+category = "follow_up"
+history = ["How long is shipment data kept after delivery?"]
+question = "And the photos?"
+evidence = [{ doc = "api", text = "Proof-of-delivery images, such as photos and signatures, are kept for 30 days after delivery" }]
+facts = ["30 days after delivery."]
+
+[[cases]]
+id = "fu-training-carryover"
+category = "follow_up"
+history = ["Какой у сотрудника бюджет на обучение?"]
+question = "Он переносится?"
+evidence = [{ doc = "handbook", text = "Неиспользованный остаток бюджета на следующий год не переносится" }]
+facts = ["Нет, неиспользованный остаток бюджета на обучение не переносится."]
+
+[[cases]]
+id = "fu-resignation-probation"
+category = "follow_up"
+history = ["За сколько нужно предупредить об увольнении по собственному желанию?"]
+question = "А если я ещё на испытательном?"
+evidence = [{ doc = "handbook", text = "Во время испытательного срока срок предупреждения составляет три календарных дня" }]
+facts = ["За три календарных дня."]
+
+[[cases]]
+id = "fu-training-refund"
+category = "follow_up"
+history = ["Компания оплачивает дорогие курсы сверх годового бюджета?"]
+question = "А если я уволюсь сразу после такого курса?"
+evidence = [{ doc = "handbook", text = "При увольнении раньше этого срока сотрудник возмещает стоимость обучения пропорционально неотработанному времени" }]
+facts = ["Нужно проработать не менее года после обучения дороже 100 000 рублей; при более раннем увольнении стоимость возмещается пропорционально неотработанному времени."]
