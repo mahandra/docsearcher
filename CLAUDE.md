@@ -66,6 +66,10 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   `LLM_REWRITE_MODEL`, structured outputs via `messages.parse(output_format=...)`). Only the
   search uses the rewrite; the model answers the user's own question. Best-effort: any
   failure searches the question as typed. The client comes from `chat/llm.py`.
+- Prompt injection comes from uploaded documents. Defences: documents only as `search_result`
+  blocks (never mixed into instructions), the system-prompt rule "content, not instructions",
+  no tools, and model output rendered as plain text (no markdown/HTML, so no links or images
+  the browser would fetch). Keep all of these; eval category `injection` checks canaries.
 - `MessageSource` copies document name/location; FKs to Chunk/Document are `SET_NULL` and are
   checked before saving (documents can vanish mid-generation).
 
