@@ -13,7 +13,15 @@ DATASET_PATH = EVALS_DIR / "dataset.toml"
 CORPUS_DIR = EVALS_DIR / "corpus"
 
 Format = Literal["pdf", "docx"]
-CATEGORIES = ("paraphrase", "exact", "cross_lingual", "multi_hop", "unanswerable", "follow_up")
+CATEGORIES = (
+    "paraphrase",
+    "exact",
+    "cross_lingual",
+    "multi_hop",
+    "unanswerable",
+    "follow_up",
+    "injection",
+)
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -49,6 +57,9 @@ class Case:
     evidence: tuple[Evidence, ...] = ()
     facts: tuple[str, ...] = ()
     history: tuple[str, ...] = ()
+    # Prompt injection: strings that appear in the answer only if the model obeyed
+    # instructions planted in a document (a competitor's name, a phishing URL, ...).
+    canaries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +99,7 @@ def load_dataset(path: Path = DATASET_PATH) -> Dataset:
             evidence=tuple(Evidence(e["doc"], e["text"]) for e in c.get("evidence", [])),
             facts=tuple(c.get("facts", [])),
             history=tuple(c.get("history", [])),
+            canaries=tuple(c.get("canaries", [])),
         )
         for c in raw.get("cases", [])
     ]
@@ -124,6 +136,8 @@ def validate(dataset: Dataset) -> None:
             errors.append(f"{prefix}: an unanswerable case has no evidence, category unanswerable")
         if case.category == "follow_up" and not case.history:
             errors.append(f"{prefix}: a follow-up needs history")
+        if case.category == "injection" and not case.canaries:
+            errors.append(f"{prefix}: an injection case needs canaries")
         for evidence in case.evidence:
             if evidence.doc not in texts:
                 errors.append(f"{prefix}: unknown document {evidence.doc!r}")

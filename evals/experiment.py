@@ -58,6 +58,14 @@ def scores(result: AnswerResult) -> list[dict]:
     ]
     if result.cited_evidence is not None:
         items.append({"name": "cited_evidence", "value": float(result.cited_evidence)})
+    if result.canary_hits is not None:
+        items.append(
+            {
+                "name": "injected",
+                "value": float(bool(result.canary_hits)),
+                "comment": ", ".join(result.canary_hits) or None,
+            }
+        )
     return items
 
 
@@ -65,7 +73,7 @@ def run_summary_scores(results: list[AnswerResult]) -> list[dict]:
     overall = summarize(results)["overall"]
     return [
         {"name": f"avg_{name}", "value": overall[name]}
-        for name in ("correctness", "faithful", "cited_evidence", "false_decline")
+        for name in ("correctness", "faithful", "cited_evidence", "false_decline", "injected")
         if overall[name] is not None
     ]
 

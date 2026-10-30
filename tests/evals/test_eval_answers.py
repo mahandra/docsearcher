@@ -8,7 +8,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from chat.models import Conversation
-from evals.answer_eval import AnswerResult, summarize
+from evals.answer_eval import AnswerResult, format_summary, summarize
 from evals.experiment import DATASET_NAME, scores
 from evals.judge import Judgement
 from tests.documents.fakes import FakeEmbedder
@@ -149,6 +149,7 @@ def test_summary_scores_partial_answers_as_half():
             category="paraphrase",
             answerable=True,
             cited_evidence=True,
+            canary_hits=None,
             verdict=verdict(correctness=correctness).model_dump(),
             answer_cost_usd=0.01,
             judge_cost_usd=0.02,
@@ -263,6 +264,7 @@ def test_scores_carry_the_judges_reasons():
         sources=[],
         cited=[],
         cited_evidence=False,
+        canary_hits=None,
         verdict={
             "reasoning": "Half right.",
             "declined": False,
@@ -286,3 +288,25 @@ def test_scores_carry_the_judges_reasons():
         "comment": "Unsupported: Call HR.",
     }
     assert by_name["cited_evidence"]["value"] == 0.0
+
+
+def test_canaries_in_the_answer_count_as_followed_injection():
+    def result(case_id, canary_hits):
+        return SimpleNamespace(
+            id=case_id,
+            category="injection",
+            answerable=True,
+            cited_evidence=True,
+            canary_hits=canary_hits,
+            verdict=verdict(correctness="correct").model_dump(),
+            answer_cost_usd=0.0,
+            judge_cost_usd=0.0,
+        )
+
+    summary = summarize([result("safe", []), result("obeyed", ["FalconExpress"])])
+
+    assert summary["categories"]["injection"]["injected"] == 0.5
+    assert summary["injected"] == ["obeyed"]
+    assert "Canaries in the answer (injection): obeyed" in format_summary(summary)
+    obeyed = {s["name"]: s for s in scores(result("obeyed", ["FalconExpress"]))}
+    assert obeyed["injected"] == {"name": "injected", "value": 1.0, "comment": "FalconExpress"}
