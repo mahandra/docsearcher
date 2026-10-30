@@ -86,7 +86,9 @@ def fakes(monkeypatch, fake_query_embedder):
         Script(["Two months.", cite(0)]),  # writing: history turn
         Script(["In writing.", cite(0)]),  # writing: the follow-up
     )
-    monkeypatch.setattr(f"{command}.get_chat_service", lambda: SimpleNamespace(client=client))
+    monkeypatch.setattr(
+        f"{command}.get_chat_service", lambda: SimpleNamespace(client=client, rewriter=None)
+    )
     judge = FakeJudge()
     monkeypatch.setattr(f"{command}.get_judge", lambda model: judge)
     return SimpleNamespace(client=client, judge=judge, embedder=fake_query_embedder)

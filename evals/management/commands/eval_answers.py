@@ -78,7 +78,9 @@ class Command(BaseCommand):
         # Keep only the latest run's conversations (handy for inspecting answers).
         Conversation.objects.filter(user=user).delete()
         queries = BatchedQueries(get_embedder(), all_questions(cases))
-        service = make_service(get_chat_service().client, queries)
+        app = get_chat_service()
+        # Configured like the app's service: follow-ups are rewritten before the search.
+        service = make_service(app.client, queries, rewriter=app.rewriter)
         judge = get_judge(options["judge_model"])
 
         def progress(result):
@@ -90,6 +92,7 @@ class Command(BaseCommand):
             "effort": service.effort,
             "judge_model": judge.model,
             "judge_effort": judge.effort,
+            "rewrite_model": service.rewriter.model if service.rewriter else "",
             "rrf_k": str(settings.RETRIEVAL_RRF_K),
             "top_k": str(settings.RETRIEVAL_TOP_K),
         }

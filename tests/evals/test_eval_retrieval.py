@@ -166,3 +166,16 @@ def test_follow_ups_are_searched_as_rewritten_queries(
     assert "In what form must notice be given?" in fake_query_embedder.queries
     assert report["settings"]["rewrite_model"] == "claude-haiku-5-5"
     assert report["rewrite_cost_usd"] == pytest.approx(0.0001)
+
+
+def test_batched_queries_embed_an_unknown_query_on_demand():
+    from evals.retrieval_eval import BatchedQueries
+
+    queries = BatchedQueries(FakeEmbedder(), ["Known?"])
+    batch_tokens = queries.total_tokens
+
+    assert queries.embed_query("Known?").total_tokens == 0  # served from the batch
+    rewritten = queries.embed_query("A rewritten follow-up?")
+    assert rewritten.total_tokens > 0
+    assert queries.total_tokens == batch_tokens + rewritten.total_tokens
+    assert queries.embed_query("A rewritten follow-up?").total_tokens == 0  # now cached

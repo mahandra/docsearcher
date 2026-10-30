@@ -66,16 +66,23 @@ class BatchedQueries:
 
     Rate limits count requests (Voyage's free tier allows 3 per minute), and one batch is
     also faster than dozens of round trips. Tokens are counted once, for the batch.
+    A query not known in advance (a follow-up rewritten by the app) is embedded on demand.
     """
 
     def __init__(self, embedder: Embedder, queries: list[str]) -> None:
         unique = list(dict.fromkeys(queries))
         result = embedder.embed_queries(unique)
+        self.embedder = embedder
         self.model = result.model
         self.total_tokens = result.total_tokens
         self.vectors = dict(zip(unique, result.vectors, strict=True))
 
     def embed_query(self, text: str) -> EmbeddingResult:
+        if text not in self.vectors:
+            result = self.embedder.embed_query(text)
+            self.vectors[text] = result.vectors[0]
+            self.total_tokens += result.total_tokens
+            return result
         return EmbeddingResult(vectors=[self.vectors[text]], total_tokens=0, model=self.model)
 
     def embed_documents(self, texts: list[str]) -> EmbeddingResult:

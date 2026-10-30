@@ -65,7 +65,10 @@ async def run_case(case: Case, service: ChatService, judge: Judge, user) -> Answ
                 sources = event.sources
             elif isinstance(event, Completed | Failed):
                 message = event.message
-        answer_cost += (message.cost_usd or 0) + (message.retrieval_cost_usd or 0)
+        answer_cost += sum(
+            cost or 0
+            for cost in (message.cost_usd, message.retrieval_cost_usd, message.rewrite_cost_usd)
+        )
 
     cited = sorted({c["source"] for c in message.citations})
     cited_evidence = None
