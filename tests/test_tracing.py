@@ -88,7 +88,7 @@ def attr(span, name):
 
 
 async def test_reply_is_one_trace_with_retrieval_and_generation(langfuse, conversation):
-    final = api_message("Two months.", input_tokens=1500, output_tokens=300)
+    final = api_message("Two months.", input_tokens=1500, output_tokens=300, cache_read_tokens=1000)
     events = await reply(
         service(langfuse, Script([THINKING, "Two months."], final=final)), conversation
     )
@@ -108,8 +108,12 @@ async def test_reply_is_one_trace_with_retrieval_and_generation(langfuse, conver
     assert attr(retrieval, "output")[0]["title"] == "Policy.pdf (p. 2)"
     assert attr(generation, "type") == "generation"
     assert attr(generation, "model.name") == "claude-opus-5-5"
-    assert attr(generation, "usage_details") == {"input": 1500, "output": 300}
-    assert attr(generation, "cost_details") == {"total": 0.012}
+    assert attr(generation, "usage_details") == {
+        "input": 1500,
+        "cache_read_input_tokens": 1000,
+        "output": 300,
+    }
+    assert attr(generation, "cost_details") == {"total": 0.0122}  # + 1000 * $0.20 / 1M
     assert attr(generation, "completion_start_time")  # time to first token
     assert attr(generation, "input")["messages"][-1]["content"][0]["type"] == "search_result"
 

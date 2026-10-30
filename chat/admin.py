@@ -6,7 +6,17 @@ from .models import Conversation, Message
 class MessageInline(admin.TabularInline):
     model = Message
     extra = 0
-    fields = ("role", "status", "content", "model", "input_tokens", "output_tokens", "cost_usd")
+    fields = (
+        "role",
+        "status",
+        "content",
+        "model",
+        "input_tokens",
+        "cache_write_tokens",
+        "cache_read_tokens",
+        "output_tokens",
+        "cost_usd",
+    )
     readonly_fields = fields
 
 
@@ -25,6 +35,7 @@ class MessageAdmin(admin.ModelAdmin):
         "status",
         "model",
         "input_tokens",
+        "cache_read_tokens",
         "output_tokens",
         "cost_usd",
         "created_at",

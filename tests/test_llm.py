@@ -11,6 +11,7 @@ from chat.llm import (
     TextDelta,
     ThinkingStarted,
     build_messages,
+    cached,
     load_prompt,
 )
 from chat.models import Message
@@ -42,6 +43,13 @@ def make_service(*scripts, **kwargs):
     kwargs.setdefault("effort", "low")
     kwargs.setdefault("retry_base_delay", 0)
     return ChatService(client, **kwargs), client
+
+
+async def history(conversation, *contents):
+    """Alternating user/assistant messages, starting with the user."""
+    for i, content in enumerate(contents):
+        role = "user" if i % 2 == 0 else "assistant"
+        await Message.objects.acreate(conversation=conversation, role=role, content=content)
 
 
 async def collect(service, conversation):
@@ -123,7 +131,7 @@ async def test_stream_reply_sends_system_prompt_history_and_config(conversation)
     params = client.messages.calls[0]
     assert params["model"] == "claude-opus-5-5"
     assert params["max_tokens"] == 1234
-    assert params["system"] == load_prompt("system")
+    assert params["system"] == cached(load_prompt("system"))
     # No documents: the model is told that the search found nothing.
     assert params["messages"] == [
         {
@@ -136,6 +144,53 @@ async def test_stream_reply_sends_system_prompt_history_and_config(conversation)
     ]
     assert params["output_config"] == {"effort": "low"}
     assert "temperature" not in params
+
+
+async def test_cache_breakpoints_on_system_prompt_and_last_history_message(conversation):
+    await history(conversation, "First?", "First answer.", "Second?", "Second answer.", "Third?")
+    service, client = make_service(Script(["ok"]))
+
+    await collect(service, conversation)
+
+    params = client.messages.calls[0]
+    assert params["system"][0]["cache_control"] == {"type": "ephemeral"}
+    messages = params["messages"]
+    # Older history stays plain; the next request repeats it all as a prefix.
+    assert messages[:3] == [
+        {"role": "user", "content": "First?"},
+        {"role": "assistant", "content": "First answer."},
+        {"role": "user", "content": "Second?"},
+    ]
+    assert messages[3] == {"role": "assistant", "content": cached("Second answer.")}
+    # The latest turn (search results + question) never recurs: no breakpoint.
+    assert "cache_control" not in str(messages[4])
+
+
+async def test_prompt_caching_can_be_turned_off(conversation):
+    await history(conversation, "First?", "First answer.", "Second?")
+    service, client = make_service(Script(["ok"]), prompt_caching=False)
+
+    await collect(service, conversation)
+
+    params = client.messages.calls[0]
+    assert params["system"] == load_prompt("system")
+    assert "cache_control" not in str(params["messages"])
+
+
+async def test_cache_usage_is_saved_and_priced(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    final = api_message(
+        "Hi", input_tokens=100, output_tokens=300, cache_write_tokens=1000, cache_read_tokens=4000
+    )
+    service, _ = make_service(Script(["Hi"], final=final))
+
+    events = await collect(service, conversation)
+
+    saved = events[-1].message
+    assert (saved.cache_write_tokens, saved.cache_read_tokens) == (1000, 4000)
+    assert saved.prompt_tokens == 5100
+    # 100*$4 + 1000*$5 (write) + 4000*$0.20 (read) + 300*$20, per 1M
+    assert saved.cost_usd == Decimal("0.012200")
 
 
 async def test_effort_is_omitted_when_empty(conversation):

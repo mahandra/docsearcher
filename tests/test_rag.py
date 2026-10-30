@@ -98,7 +98,7 @@ async def test_only_the_latest_question_carries_search_results(conversation):
     assert retriever.calls == [(conversation.user_id, "New")]
     messages = client.messages.calls[0]["messages"]
     assert messages[0] == {"role": "user", "content": "Old question"}
-    assert messages[1] == {"role": "assistant", "content": "Old answer"}
+    assert messages[1]["content"][0]["text"] == "Old answer"  # cache breakpoint block
     assert messages[2]["content"][0]["type"] == "search_result"
 
 

@@ -24,6 +24,10 @@ Learning/portfolio project — the author is an experienced Django engineer new 
   events (`SourcesFound`, `TextDelta`, `Cited`, `Completed`, `Failed`), never SDK objects.
 - System prompts live in `chat/prompts/*.md`, not in Python strings.
 - Model pricing lives in `chat/pricing.py`; cost is computed from `usage` and stored per message.
+- Prompt caching (`add_cache_breakpoints`): breakpoints on the system prompt and on the last
+  history message, never on the latest turn (its search results are not kept in history).
+  Keep the system prompt byte-stable (no dates/user data in it). `input_tokens` is the
+  uncached remainder; cache writes/reads are stored and priced separately.
 - Model, effort, max_tokens, history window, retries — all configurable via env (`LLM_*`).
 - Do not send `temperature`/`top_p`/`top_k` (rejected by the current API version).
 - Retries: rely on the SDK's `max_retries` (backoff + retry-after). Never retry after the first

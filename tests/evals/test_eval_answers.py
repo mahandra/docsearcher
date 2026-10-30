@@ -125,7 +125,8 @@ def test_answers_are_generated_checked_and_judged(dataset, tmp_path, fakes):
 
     # The follow-up was asked after the model's own first answer, like in the app.
     follow_up = fakes.client.messages.calls[3]["messages"]
-    assert follow_up[1] == {"role": "assistant", "content": "Two months."}
+    assert follow_up[1]["role"] == "assistant"
+    assert follow_up[1]["content"][0]["text"] == "Two months."
     assert follow_up[2]["content"][-1]["text"] == "And in what form?"
     judged = {case_id: answer for case_id, _, answer in fakes.judge.calls}
     assert judged["writing"] == "In writing."

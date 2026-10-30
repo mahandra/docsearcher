@@ -51,7 +51,10 @@ class Message(models.Model):
 
     # Cost tracking — filled for assistant messages only.
     model = models.CharField(max_length=100, blank=True)
+    # Input is reported in three parts; `input_tokens` is the uncached remainder only.
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cache_write_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cache_read_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
     cost_usd = models.DecimalField(
         max_digits=12, decimal_places=6, null=True, blank=True, default=None
@@ -74,8 +77,17 @@ class Message(models.Model):
         return f"{self.role}: {self.content[:50]}"
 
     @property
+    def prompt_tokens(self) -> int:
+        """The whole prompt: uncached + written to the cache + read from it."""
+        return (
+            (self.input_tokens or 0)
+            + (self.cache_write_tokens or 0)
+            + (self.cache_read_tokens or 0)
+        )
+
+    @property
     def total_tokens(self) -> int:
-        return (self.input_tokens or 0) + (self.output_tokens or 0)
+        return self.prompt_tokens + (self.output_tokens or 0)
 
     # --- Citations, for rendering. Prefetch `sources` when rendering many messages. ---
 

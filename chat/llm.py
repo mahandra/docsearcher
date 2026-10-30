@@ -238,6 +238,35 @@ async def build_messages(
     return messages
 
 
+CACHE_BREAKPOINT = {"type": "ephemeral"}  # 5-minute TTL, refreshed by every read
+
+
+def cached(text: str) -> list[dict[str, Any]]:
+    return [{"type": "text", "text": text, "cache_control": CACHE_BREAKPOINT}]
+
+
+def add_cache_breakpoints(
+    system: str, messages: list[MessageParam]
+) -> tuple[list[dict[str, Any]], list[MessageParam]]:
+    """Mark the prompt prefixes that the next requests will repeat byte for byte.
+
+    The cache matches a prefix (system, then messages) up to a marked block:
+    - the system prompt is the same for every request of every user;
+    - the history (all but the latest turn) starts the next request of this conversation.
+    The latest turn is not marked: its search results are not kept in the history, so
+    its bytes never recur and caching it would only pay the write premium. Prefixes
+    shorter than the model's minimum (512 tokens) are silently not cached.
+    """
+    if len(messages) > 1 and isinstance(messages[-2]["content"], str):
+        last = messages[-2]
+        messages = [
+            *messages[:-2],
+            {"role": last["role"], "content": cached(last["content"])},
+            messages[-1],
+        ]
+    return cached(system), messages
+
+
 # --- Errors ------------------------------------------------------------------------
 
 
@@ -283,6 +312,7 @@ class ChatService:
         retry_base_delay: float = 1.0,
         retriever: Retriever = retrieve_sources,
         tracer: Callable[..., ReplyTrace] = start_reply_trace,
+        prompt_caching: bool | None = None,
     ) -> None:
         self.client = client
         self.retriever = retriever
@@ -294,12 +324,18 @@ class ChatService:
             settings.LLM_MAX_RETRIES if max_stream_retries is None else max_stream_retries
         )
         self.retry_base_delay = retry_base_delay
+        self.prompt_caching = (
+            settings.LLM_PROMPT_CACHING if prompt_caching is None else prompt_caching
+        )
 
     def _request_params(self, messages: list[MessageParam]) -> dict[str, Any]:
+        system: Any = load_prompt("system")
+        if self.prompt_caching:
+            system, messages = add_cache_breakpoints(system, messages)
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "system": load_prompt("system"),
+            "system": system,
             "messages": messages,
         }
         if self.effort:
@@ -466,9 +502,17 @@ class ChatService:
         model = model or self.model
         input_tokens = getattr(usage, "input_tokens", None)
         output_tokens = getattr(usage, "output_tokens", None)
+        cache_write_tokens = getattr(usage, "cache_creation_input_tokens", None)
+        cache_read_tokens = getattr(usage, "cache_read_input_tokens", None)
         cost = None
         if input_tokens is not None and output_tokens is not None:
-            cost = estimate_cost(model, input_tokens, output_tokens)
+            cost = estimate_cost(
+                model,
+                input_tokens,
+                output_tokens,
+                cache_write_tokens=cache_write_tokens or 0,
+                cache_read_tokens=cache_read_tokens or 0,
+            )
         retrieval_cost = None
         if retrieval.embedding_model:
             retrieval_cost = estimate_embedding_cost(
@@ -482,6 +526,8 @@ class ChatService:
             stop_reason=stop_reason,
             model=model,
             input_tokens=input_tokens,
+            cache_write_tokens=cache_write_tokens,
+            cache_read_tokens=cache_read_tokens,
             output_tokens=output_tokens,
             cost_usd=cost,
             retrieval_tokens=retrieval.embedding_tokens if retrieval.embedding_model else None,

@@ -15,7 +15,7 @@
       {% if message.stop_reason == "max_tokens" %}<span class="warn">Answer truncated (max tokens).</span>{% endif %}
       {% if message.stop_reason == "refusal" %}<span class="warn">The model declined to answer.</span>{% endif %}
       {% if message.input_tokens is not None %}
-        {{ message.model }} · {{ message.input_tokens }} in / {{ message.output_tokens }} out
+        {{ message.model }} · {{ message.prompt_tokens }} in{% if message.cache_read_tokens %} ({{ message.cache_read_tokens }} cached){% endif %} / {{ message.output_tokens }} out
         {% if message.cost_usd is not None %}· ${{ message.cost_usd|floatformat:6 }}{% endif %}
       {% endif %}
       {% if message.retrieval_cost_usd is not None %}· search ${{ message.retrieval_cost_usd|floatformat:6 }}{% endif %}

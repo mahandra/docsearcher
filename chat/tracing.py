@@ -140,7 +140,13 @@ class ReplyTrace:
         if self._generation is not None:
             usage = {}
             if message.input_tokens is not None:
-                usage = {"input": message.input_tokens, "output": message.output_tokens or 0}
+                usage = {
+                    "input": message.input_tokens,
+                    "cache_creation_input_tokens": message.cache_write_tokens,
+                    "cache_read_input_tokens": message.cache_read_tokens,
+                    "output": message.output_tokens or 0,
+                }
+                usage = {k: v for k, v in usage.items() if v is not None}
             self._end(
                 self._generation,
                 model=message.model,

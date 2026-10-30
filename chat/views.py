@@ -205,6 +205,9 @@ def _message_meta(message: Message) -> dict:
         "stop_reason": message.stop_reason,
         "model": message.model,
         "input_tokens": message.input_tokens,
+        "cache_read_tokens": message.cache_read_tokens,
+        "cache_write_tokens": message.cache_write_tokens,
+        "prompt_tokens": message.prompt_tokens,
         "output_tokens": message.output_tokens,
         "cost_usd": str(message.cost_usd) if message.cost_usd is not None else None,
         "retrieval_cost_usd": (
