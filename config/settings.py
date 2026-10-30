@@ -105,6 +105,9 @@ LLM_TIMEOUT_SECONDS = env.float("LLM_TIMEOUT_SECONDS", default=120.0)
 # Prompt caching: the system prompt and the conversation history are cached for 5 minutes,
 # so the next turn re-reads them at a fraction of the input price.
 LLM_PROMPT_CACHING = env.bool("LLM_PROMPT_CACHING", default=True)
+# Used once per reply when the main model stays overloaded/unavailable after retries
+# (before any text was streamed). Empty disables the fallback.
+LLM_FALLBACK_MODEL = env("LLM_FALLBACK_MODEL", default="claude-sonnet-5-5")
 
 # Langfuse tracing (chat/tracing.py): off unless both keys are set.
 LANGFUSE_PUBLIC_KEY = env("LANGFUSE_PUBLIC_KEY", default="")

@@ -22,6 +22,7 @@ from tests.fakes import (
     api_message,
     auth_error,
     midstream_overloaded_error,
+    overloaded_error,
     rate_limit_error,
 )
 
@@ -304,3 +305,89 @@ async def test_client_disconnect_saves_partial_answer_and_closes_stream(conversa
     assert saved.status == Message.Status.INTERRUPTED
     assert saved.content == "One"
     assert client.messages.streams[0].closed
+
+
+# --- Model fallback -------------------------------------------------------------------
+
+
+async def test_falls_back_to_another_model_when_the_main_one_stays_overloaded(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    fallback = api_message("Hello", input_tokens=1500, output_tokens=300, model="claude-sonnet-5-5")
+    service, client = make_service(
+        Script(open_error=overloaded_error()),
+        Script(["Hello"], final=fallback),
+        fallback_model="claude-sonnet-5-5",
+    )
+
+    events = await collect(service, conversation)
+
+    assert [c["model"] for c in client.messages.calls] == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    # Everything but the model is the same request.
+    assert {**client.messages.calls[1], "model": "claude-opus-5-5"} == client.messages.calls[0]
+    saved = events[-1].message
+    assert isinstance(events[-1], Completed)
+    assert saved.model == "claude-sonnet-5-5"
+    assert saved.cost_usd == Decimal("0.006000")  # priced as Sonnet: 1500*$2 + 300*$10, per 1M
+
+
+async def test_falls_back_after_mid_stream_retries_are_used_up(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    service, client = make_service(
+        Script([midstream_overloaded_error()]),
+        Script([midstream_overloaded_error()]),
+        Script(["Hello"]),
+        max_stream_retries=1,
+        fallback_model="claude-sonnet-5-5",
+    )
+
+    events = await collect(service, conversation)
+
+    models = [c["model"] for c in client.messages.calls]
+    assert models == ["claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5"]
+    assert isinstance(events[-1], Completed)
+
+
+async def test_no_fallback_for_errors_another_model_would_repeat(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    service, client = make_service(
+        Script(open_error=auth_error()), fallback_model="claude-sonnet-5-5"
+    )
+
+    events = await collect(service, conversation)
+
+    assert len(client.messages.calls) == 1
+    assert isinstance(events[-1], Failed)
+
+
+async def test_no_fallback_once_text_was_streamed(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    service, client = make_service(
+        Script(["Partial", midstream_overloaded_error()]), fallback_model="claude-sonnet-5-5"
+    )
+
+    events = await collect(service, conversation)
+
+    assert len(client.messages.calls) == 1
+    assert events[-1].message.status == Message.Status.INTERRUPTED
+
+
+async def test_falls_back_only_once(conversation):
+    await Message.objects.acreate(conversation=conversation, role="user", content="Hi")
+    service, client = make_service(
+        Script(open_error=overloaded_error()),
+        Script(open_error=overloaded_error()),
+        fallback_model="claude-sonnet-5-5",
+    )
+
+    events = await collect(service, conversation)
+
+    assert len(client.messages.calls) == 2
+    assert isinstance(events[-1], Failed)
+    assert events[-1].message.model == "claude-sonnet-5-5"  # the model that failed last
+
+
+async def test_fallback_is_off_without_a_model_or_when_it_is_the_main_one(conversation):
+    service, _ = make_service(fallback_model="")
+    assert service.fallback_model == ""
+    service, _ = make_service(fallback_model="claude-opus-5-5")
+    assert service.fallback_model == ""

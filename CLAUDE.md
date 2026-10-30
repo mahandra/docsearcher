@@ -32,6 +32,9 @@ Learning/portfolio project — the author is an experienced Django engineer new 
 - Do not send `temperature`/`top_p`/`top_k` (rejected by the current API version).
 - Retries: rely on the SDK's `max_retries` (backoff + retry-after). Never retry after the first
   token was streamed — save a partial answer with status `interrupted` instead.
+- Model fallback (`LLM_FALLBACK_MODEL`): once per reply, only before any text was streamed and
+  only for retryable errors (overloaded/5xx/429/network) left after the retries. Never for 4xx.
+  The saved message and its cost use the model that actually answered.
 - Streaming: SSE via `StreamingHttpResponse` + async generator; the browser uses native `EventSource`
   and must close it on `done`/`error` (otherwise it auto-reconnects and re-triggers generation).
   The server only generates for a user message that has no assistant reply yet.

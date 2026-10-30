@@ -67,6 +67,13 @@ def auth_error() -> anthropic.AuthenticationError:
     )
 
 
+def overloaded_error() -> anthropic.APIStatusError:
+    """HTTP 529 when opening the stream (raised after the SDK's own retries)."""
+    return anthropic.OverloadedError(
+        "overloaded", response=httpx2.Response(529, request=_REQUEST), body=None
+    )
+
+
 def midstream_overloaded_error() -> anthropic.APIStatusError:
     """How the SDK surfaces an SSE `error` event: HTTP 200, error type in the body."""
     return anthropic.APIStatusError(

@@ -313,6 +313,7 @@ class ChatService:
         retriever: Retriever = retrieve_sources,
         tracer: Callable[..., ReplyTrace] = start_reply_trace,
         prompt_caching: bool | None = None,
+        fallback_model: str | None = None,
     ) -> None:
         self.client = client
         self.retriever = retriever
@@ -327,6 +328,8 @@ class ChatService:
         self.prompt_caching = (
             settings.LLM_PROMPT_CACHING if prompt_caching is None else prompt_caching
         )
+        fallback_model = settings.LLM_FALLBACK_MODEL if fallback_model is None else fallback_model
+        self.fallback_model = fallback_model if fallback_model != self.model else ""
 
     def _request_params(self, messages: list[MessageParam]) -> dict[str, Any]:
         system: Any = load_prompt("system")
@@ -415,6 +418,21 @@ class ChatService:
                         await asyncio.sleep(delay)
                         continue
 
+                    if self._should_fall_back(params, attempt, exc):
+                        # Retries did not help: the model is overloaded or unavailable
+                        # for longer. Another model has its own capacity (and rate
+                        # limits), but not this one's prompt cache.
+                        logger.warning(
+                            "Model %s unavailable (%s); falling back to %s",
+                            params["model"],
+                            exc,
+                            self.fallback_model,
+                        )
+                        trace.fail_generation(str(exc))
+                        params = {**params, "model": self.fallback_model}
+                        attempt_no = 0
+                        continue
+
                     logger.error(
                         "LLM request failed (request_id=%s): %s",
                         getattr(exc, "request_id", None),
@@ -427,6 +445,7 @@ class ChatService:
                         retrieval,
                         trace,
                         status,
+                        model=params["model"],
                         usage=attempt.snapshot_usage(),
                         error=str(exc),
                     )
@@ -442,9 +461,20 @@ class ChatService:
                     retrieval,
                     trace,
                     Message.Status.INTERRUPTED,
+                    model=params["model"],
                     usage=attempt.snapshot_usage(),
                     error="client disconnected",
                 )
+
+    def _should_fall_back(self, params: dict[str, Any], attempt: _Attempt, exc: Exception) -> bool:
+        """Once, before any text was streamed, and only for capacity/availability errors:
+        a 4xx (bad request, auth) would fail the same way on any model."""
+        return (
+            bool(self.fallback_model)
+            and params["model"] != self.fallback_model
+            and not attempt.parts
+            and is_retryable(exc)
+        )
 
     async def _stream_once(
         self, params: dict[str, Any], attempt: _Attempt

@@ -11,7 +11,14 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from chat.llm import ChatService, Completed, Retrieval, Source
 from chat.models import Message
 from chat.tracing import ReplyTrace, get_langfuse
-from tests.fakes import THINKING, FakeClient, Script, api_message, midstream_overloaded_error
+from tests.fakes import (
+    THINKING,
+    FakeClient,
+    Script,
+    api_message,
+    midstream_overloaded_error,
+    overloaded_error,
+)
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -66,7 +73,7 @@ async def one_source(user_id, query):
     return Retrieval(sources=[SOURCE], embedding_model="voyage-4", embedding_tokens=7)
 
 
-def service(langfuse, *scripts):
+def service(langfuse, *scripts, **kwargs):
     return ChatService(
         FakeClient(*scripts),
         model="claude-opus-5-5",
@@ -74,6 +81,7 @@ def service(langfuse, *scripts):
         retry_base_delay=0,
         retriever=one_source,
         tracer=partial(ReplyTrace, langfuse.client),
+        **kwargs,
     )
 
 
@@ -128,6 +136,18 @@ async def test_retried_attempt_is_a_failed_generation(langfuse, conversation):
     assert attr(failed, "level") == "ERROR"
     assert attr(ok, "level") is None
     assert attr(ok, "output") == "Recovered"
+
+
+async def test_fallback_is_a_second_generation_with_the_other_model(langfuse, conversation):
+    final = api_message("Two months.", model="claude-sonnet-5-5")
+    scripts = [Script(open_error=overloaded_error()), Script(["Two months."], final=final)]
+    await reply(service(langfuse, *scripts, fallback_model="claude-sonnet-5-5"), conversation)
+
+    generations = sorted(
+        (s for s in langfuse.all_spans() if s.name == "claude"), key=lambda s: s.start_time
+    )
+    assert [attr(g, "model.name") for g in generations] == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    assert [attr(g, "level") for g in generations] == ["ERROR", None]
 
 
 async def test_content_capture_can_be_turned_off(langfuse, conversation, settings):

@@ -26,6 +26,12 @@ def no_langfuse(settings):
     get_langfuse.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def no_fallback_model(settings):
+    """Error tests script one call per attempt; fallback tests enable it explicitly."""
+    settings.LLM_FALLBACK_MODEL = ""
+
+
 @pytest.fixture
 def user(django_user_model):
     return django_user_model.objects.create_user(username="alice", password="pw-alice-123")
