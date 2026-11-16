@@ -13,6 +13,22 @@ by an eval suite with an LLM judge, and every reply is traced in Langfuse (phase
 caching, a fallback model, follow-up query rewriting, prompt-injection checks and a warning for
 uncited answers make it closer to production (phase 5).
 
+## Screenshots
+
+Chat: streamed answers with citations rendered as footnotes, per-message model, tokens
+(including cached ones) and cost.
+
+![Chat with cited answers](photo/chat.png)
+
+Documents: upload, processing status, chunk/token counts and embedding cost.
+
+![Document list](photo/documents.png)
+
+Document detail: the chunks with their heading, token estimate and the start of the embedding
+vector.
+
+![Document chunks](photo/document-chunks.png)
+
 ## Quick start
 
 Requirements: Docker with Compose v2, GNU make. Optionally [uv](https://docs.astral.sh/uv/)
